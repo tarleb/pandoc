@@ -29,6 +29,11 @@ function newpage() {
   window.location.href = href.replace(/([?].*)?$/,"?" + $.param({text: input, from: from, to: to}));
 };
 
+function usesReferenceLinks(format) {
+  // The reference-link extension is turned on per default and affects
+  return (["markdown", "textile"].indexOf(format) >= 0);
+}
+
 $(document).ready(function() {
     var text = $.QueryString["text"];
     $("#text").val(text);
@@ -41,7 +46,8 @@ $(document).ready(function() {
          function(res) {
           $("#results").text(res.html);
           $("#version").text(res.version);
-          $("#command").text("pandoc --from " + from + " --to " + to);
+          $("#command").text("pandoc --from " + from + " --to " + to +
+                             (usesReferenceLinks(to) ? "--reference-links" : ""));
          });
     };
     $("#convert").click(newpage);
