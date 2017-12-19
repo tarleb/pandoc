@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-
 Copyright © 2017 Albert Krewinkel <tarleb+pandoc@moltkeplatz.de>
 
@@ -17,7 +15,7 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
 {- |
    Module      : Text.Pandoc.Lua.PandocModule
    Copyright   : Copyright © 2017 Albert Krewinkel
@@ -35,23 +33,19 @@ module Text.Pandoc.Lua.PandocModule
 
 import Control.Monad (zipWithM_)
 import Data.Default (Default (..))
-import Data.Digest.Pure.SHA (sha1, showDigest)
 import Data.IORef (IORef, modifyIORef', readIORef)
 import Data.Maybe (fromMaybe)
 import Data.Text (pack)
 import Foreign.Lua (ToLuaStack, FromLuaStack, Lua, NumResults, liftIO)
-import Foreign.Lua.FunctionCalling (ToHaskellFunction)
-import System.Exit (ExitCode (..))
 import Text.Pandoc.Class (CommonState (..), fetchItem, putCommonState,
                           runIO, runIOorExplode, setMediaBag)
 import Text.Pandoc.Definition (Block, Inline)
 import Text.Pandoc.Lua.Filter (walkInlines, walkBlocks, LuaFilter)
 import Text.Pandoc.Lua.StackInstances ()
-import Text.Pandoc.Lua.Util (loadScriptFromDataDir)
+import Text.Pandoc.Lua.Util (addFunction, loadScriptFromDataDir)
 import Text.Pandoc.Walk (Walkable)
 import Text.Pandoc.MIME (MimeType)
 import Text.Pandoc.Options (ReaderOptions (readerExtensions))
-import Text.Pandoc.Process (pipeProcess)
 import Text.Pandoc.Readers (Reader (..), getReader)
 
 import qualified Data.ByteString.Lazy as BL
@@ -63,9 +57,7 @@ import qualified Text.Pandoc.MediaBag as MB
 pushPandocModule :: Maybe FilePath -> Lua NumResults
 pushPandocModule datadir = do
   loadScriptFromDataDir datadir "pandoc.lua"
-  addFunction "_pipe" pipeFn
   addFunction "_read" readDoc
-  addFunction "sha1" sha1HashFn
   addFunction "walk_block" walkBlock
   addFunction "walk_inline" walkInline
   return 1
@@ -106,29 +98,6 @@ pushMediaBagModule commonState mediaBagRef = do
   addFunction "fetch" (fetch commonState mediaBagRef)
   return 1
 
-addFunction :: ToHaskellFunction a => String -> a -> Lua ()
-addFunction name fn = do
-  Lua.push name
-  Lua.pushHaskellFunction fn
-  Lua.rawset (-3)
-
-sha1HashFn :: BL.ByteString
-           -> Lua NumResults
-sha1HashFn contents = do
-  Lua.push $ showDigest (sha1 contents)
-  return 1
-
-pipeFn :: String
-       -> [String]
-       -> BL.ByteString
-       -> Lua NumResults
-pipeFn command args input = do
-  (ec, output) <- liftIO $ pipeProcess Nothing command args input
-  Lua.push $ case ec of
-                  ExitSuccess   -> 0
-                  ExitFailure n -> n
-  Lua.push output
-  return 2
 
 insertMediaFn :: IORef MB.MediaBag
               -> FilePath
@@ -183,7 +152,7 @@ fetch commonState mbRef src = do
   return 2 -- returns 2 values: contents, mimetype
 
 --
--- Helper types and orphan instances
+-- Helper types
 --
 
 newtype OrNil a = OrNil { toMaybe :: Maybe a }

@@ -40,6 +40,7 @@ import Text.Pandoc.Class (CommonState, readDataFile, runIO, setUserDataDir)
 import Text.Pandoc.MediaBag (MediaBag)
 import Text.Pandoc.Lua.PandocModule (pushPandocModule, pushMediaBagModule)
 import Text.Pandoc.Lua.Util (dostring')
+import Text.Pandoc.Lua.UtilsModule (pushUtilsModule)
 
 import qualified Foreign.Lua as Lua
 
@@ -76,6 +77,7 @@ pandocPackageSearcher luaPkgParams pkgName =
     "pandoc.mediabag" -> let st    = luaPkgCommonState luaPkgParams
                              mbRef = luaPkgMediaBag luaPkgParams
                          in pushWrappedHsFun (pushMediaBagModule st mbRef)
+    "pandoc.utils"    -> pushWrappedHsFun pushUtilsModule
     _ -> searchPureLuaLoader
  where
   pushWrappedHsFun f = do

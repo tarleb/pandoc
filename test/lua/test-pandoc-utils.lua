@@ -1,4 +1,4 @@
-utils = require 'pandoc'
+utils = require 'pandoc.utils'
 
 -- SHA1
 ------------------------------------------------------------------------

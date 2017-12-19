@@ -529,6 +529,7 @@ library
                    Text.Pandoc.Lua.PandocModule,
                    Text.Pandoc.Lua.StackInstances,
                    Text.Pandoc.Lua.Util,
+                   Text.Pandoc.Lua.UtilsModule,
                    Text.Pandoc.CSS,
                    Text.Pandoc.CSV,
                    Text.Pandoc.UUID,
