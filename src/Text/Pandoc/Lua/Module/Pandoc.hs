@@ -39,7 +39,7 @@ import Data.Text (pack)
 import Foreign.Lua (Lua, NumResults, Optional, Peekable, Pushable)
 import System.Exit (ExitCode (..))
 import Text.Pandoc.Class (runIO)
-import Text.Pandoc.Definition (Block, Inline)
+import Text.Pandoc.Definition (Block, Inline (Str))
 import Text.Pandoc.Lua.Filter (walkInlines, walkBlocks, LuaFilter)
 import Text.Pandoc.Lua.StackInstances ()
 import Text.Pandoc.Walk (Walkable)
@@ -57,6 +57,7 @@ import qualified Text.Pandoc.Lua.Util as LuaUtil
 pushModule :: Maybe FilePath -> Lua NumResults
 pushModule datadir = do
   LuaUtil.loadScriptFromDataDir datadir "pandoc.lua"
+  LuaUtil.addFunction "StrNew" (return . Str :: String -> Lua Inline)
   LuaUtil.addFunction "read" readDoc
   LuaUtil.addFunction "pipe" pipeFn
   LuaUtil.addFunction "walk_block" walkBlock

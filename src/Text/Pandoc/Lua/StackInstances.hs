@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE OverloadedStrings    #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-
 Copyright © 2012-2018 John MacFarlane <jgm@berkeley.edu>
@@ -36,11 +37,15 @@ module Text.Pandoc.Lua.StackInstances () where
 
 import Prelude
 import Control.Applicative ((<|>))
+import Control.Monad (when)
 import Data.Data (showConstr, toConstr)
+import Data.Text (Text, unpack)
 import Foreign.Lua (Lua, Peekable, Pushable, StackIndex)
 import Foreign.Lua.Types.Peekable (reportValueOnFailure)
 import Foreign.Lua.Userdata ( ensureUserdataMetatable, pushAnyWithMetatable
                             , toAnyWithName, metatableName)
+import Foreign.Ptr (Ptr)
+import Foreign.StablePtr (StablePtr, deRefStablePtr, newStablePtr)
 import Text.Pandoc.Class (CommonState (..))
 import Text.Pandoc.Definition
 import Text.Pandoc.Extensions (Extensions)
@@ -52,6 +57,8 @@ import Text.Pandoc.Shared (Element (Blk, Sec))
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Foreign.Lua as Lua
+import qualified Foreign.Lua.Types.Peekable as Lua (reportValueOnFailure)
+import qualified Foreign.Storable as Storable
 import qualified Text.Pandoc.Lua.Util as LuaUtil
 
 instance Pushable Pandoc where
@@ -231,64 +238,176 @@ peekBlock idx = defineHowTo "get Block value" $ do
 
 -- | Push an inline element to the top of the lua stack.
 pushInline :: Inline -> Lua ()
-pushInline = \case
-  Cite citations lst       -> pushViaConstructor "Cite" lst citations
-  Code attr lst            -> pushViaConstructor "Code" lst (LuaAttr attr)
-  Emph inlns               -> pushViaConstructor "Emph" inlns
-  Image attr alt (src,tit) -> pushViaConstructor "Image" alt src tit (LuaAttr attr)
-  LineBreak                -> pushViaConstructor "LineBreak"
-  Link attr lst (src,tit)  -> pushViaConstructor "Link" lst src tit (LuaAttr attr)
-  Note blcks               -> pushViaConstructor "Note" blcks
-  Math mty str             -> pushViaConstructor "Math" mty str
-  Quoted qt inlns          -> pushViaConstructor "Quoted" qt inlns
-  RawInline f cs           -> pushViaConstructor "RawInline" f cs
-  SmallCaps inlns          -> pushViaConstructor "SmallCaps" inlns
-  SoftBreak                -> pushViaConstructor "SoftBreak"
-  Space                    -> pushViaConstructor "Space"
-  Span attr inlns          -> pushViaConstructor "Span" inlns (LuaAttr attr)
-  Str str                  -> pushViaConstructor "Str" str
-  Strikeout inlns          -> pushViaConstructor "Strikeout" inlns
-  Strong inlns             -> pushViaConstructor "Strong" inlns
-  Subscript inlns          -> pushViaConstructor "Subscript" inlns
-  Superscript inlns        -> pushViaConstructor "Superscript" inlns
+pushInline = pushAnyWithMetatable $
+  ensureUserdataMetatable "pandoc Inline" pushInlineMetatable
 
 -- | Return the value at the given index as inline if possible.
 peekInline :: StackIndex -> Lua Inline
-peekInline idx = defineHowTo "get Inline value" $ do
-  tag <- LuaUtil.getTag idx
-  case tag of
-    "Cite"       -> uncurry Cite <$> elementContent
-    "Code"       -> withAttr Code <$> elementContent
-    "Emph"       -> Emph <$> elementContent
-    "Image"      -> (\(LuaAttr attr, lst, tgt) -> Image attr lst tgt)
-                    <$> elementContent
-    "Link"       -> (\(LuaAttr attr, lst, tgt) -> Link attr lst tgt)
-                    <$> elementContent
-    "LineBreak"  -> return LineBreak
-    "Note"       -> Note <$> elementContent
-    "Math"       -> uncurry Math <$> elementContent
-    "Quoted"     -> uncurry Quoted <$> elementContent
-    "RawInline"  -> uncurry RawInline <$> elementContent
-    "SmallCaps"  -> SmallCaps <$> elementContent
-    "SoftBreak"  -> return SoftBreak
-    "Space"      -> return Space
-    "Span"       -> withAttr Span <$> elementContent
-    "Str"        -> Str <$> elementContent
-    "Strikeout"  -> Strikeout <$> elementContent
-    "Strong"     -> Strong <$> elementContent
-    "Subscript"  -> Subscript <$> elementContent
-    "Superscript"-> Superscript <$> elementContent
-    _ -> Lua.throwException ("Unknown inline type: " <> tag)
+peekInline = Lua.reportValueOnFailure "Inline" (\idx -> toAnyWithName idx "pandoc Inline")
+
+------------------------------------------------------------------------
+
+pushInlineMetatable :: Lua ()
+pushInlineMetatable = do
+  Lua.pushHaskellFunction inlineIndexFn
+  Lua.setfield (Lua.nthFromTop 2) "__index"
+
+  Lua.pushHaskellFunction inlineNewindex
+  Lua.setfield (Lua.nthFromTop 2) "__newindex"
+
+
+inlineIndexFn :: Inline
+              -> Text
+              -> Lua Lua.NumResults
+inlineIndexFn inln accessor =
+  case inln of
+    Str s -> case accessor of
+               "text" -> 1 <$ Lua.push s
+               _ -> unknownAccessor accessor
+    _ ->
+      if accessor `elem` ["t", "tag"]
+      then returnValue . showConstr $ toConstr inln
+      else case inln of
+        Code attr cs -> case accessor of
+          "attr" -> returnValue attr
+          "text" -> returnValue cs
+          _ -> unknownAccessor accessor
+        Cite citations inlns -> case accessor of
+          "content" -> returnValue inlns
+          "citations" -> returnValue citations
+          _ -> unknownAccessor accessor
+        Emph inlns -> content inlns
+        Image attr inlns (src, title) -> case accessor of
+          "attr" -> returnValue attr
+          "caption" -> returnValue inlns
+          "src" -> returnValue src
+          "title" -> returnValue title
+          _ -> unknownAccessor accessor
+        LineBreak -> unknownAccessor accessor
+        Link attr inlns (title, target) -> case accessor of
+          "attr" -> returnValue attr
+          "content" -> returnValue inlns
+          "target" -> returnValue target
+          "title" -> returnValue title
+          _ -> unknownAccessor accessor
+        Math mathType math -> case accessor of
+          "mathtype" -> returnValue mathType
+          "text" -> returnValue math
+          _ -> unknownAccessor accessor
+        Note inlns -> case accessor of
+          "content" -> returnValue inlns
+          _ -> unknownAccessor accessor
+        Quoted quoteType inlns -> case accessor of
+          "content" -> returnValue inlns
+          "quotetype" -> returnValue quoteType
+          _ -> unknownAccessor accessor
+        RawInline format cs  -> case accessor of
+          "format" -> returnValue format
+          "text" -> returnValue cs
+          _ -> unknownAccessor accessor
+        SmallCaps inlns -> content inlns
+        SoftBreak -> unknownAccessor accessor
+        Space -> unknownAccessor accessor
+        Span attr inlns -> case accessor of
+          "content" -> returnValue inlns
+          "attr" -> returnValue attr
+          _ -> unknownAccessor accessor
+        Str cs -> case accessor of
+          "text" -> returnValue cs
+          _ -> unknownAccessor accessor
+        Strikeout inlns -> content inlns
+        Strong inlns -> content inlns
+        Superscript inlns -> content inlns
+        Subscript inlns -> content inlns
+     where
+      returnValue x = 1 <$ Lua.push x
+
+      content inlns = if accessor == "content"
+        then returnValue inlns
+        else unknownAccessor accessor
+
+inlineNewindex :: Ptr (StablePtr Inline)
+               -> Text
+               -> AnyValue
+               -> Lua Lua.NumResults
+inlineNewindex ptr accessor anyval = do
+  oldInline <- Lua.liftIO $ deRefStablePtr =<< Storable.peek ptr
+  updatedInline <- case oldInline of
+    Code attr cs -> case accessor of
+      "attr" -> flip Code cs <$> attrValue
+      "text" -> Code attr <$> stringValue
+      _ -> unknownAccessor accessor
+    Cite citations inlns -> case accessor of
+      "content" -> Cite citations <$> inlineValue
+      "citations" -> flip Cite inlns <$> fromAnyValue anyval
+      _ -> unknownAccessor accessor
+    Emph _ -> content Emph
+    Image attr inlns (src, title) -> case accessor of
+      "attr" -> (\x -> Link x inlns (src, title)) <$> attrValue
+      "caption" -> (\x -> Link attr x (src, title)) <$> inlineValue
+      "src" -> (\x -> Link attr inlns (x, title)) <$> stringValue
+      "title" -> (\x -> Link attr inlns (src, x)) <$> stringValue
+      _ -> unknownAccessor accessor
+    LineBreak -> unknownAccessor accessor
+    Link attr inlns (title, target) -> case accessor of
+      "attr" -> (\x -> Link x inlns (title, target)) <$> attrValue
+      "content" -> (\x -> Link attr x (title, target)) <$> inlineValue
+      "target" -> (\x -> Link attr inlns (title, x)) <$> stringValue
+      "title" -> (\x -> Link attr inlns (x, target)) <$> stringValue
+      _ -> unknownAccessor accessor
+    Math mathType math -> case accessor of
+      "attr" -> flip Math math <$> fromAnyValue anyval
+      "text" -> Math mathType <$> fromAnyValue anyval
+      _ -> unknownAccessor accessor
+    Note _ -> case accessor of
+      "content" -> Note <$> fromAnyValue anyval
+      _ -> unknownAccessor accessor
+    Quoted quoteType inlns -> case accessor of
+      "content" -> Quoted quoteType <$> inlineValue
+      "quotetype" -> flip Quoted inlns <$> fromAnyValue anyval
+      _ -> unknownAccessor accessor
+    RawInline format cs  -> case accessor of
+      "format" -> flip RawInline cs . Format <$> stringValue
+      "text" -> RawInline format <$> stringValue
+      _ -> unknownAccessor accessor
+    SmallCaps _ -> content SmallCaps
+    SoftBreak -> unknownAccessor accessor
+    Space -> unknownAccessor accessor
+    Span attr inlns -> case accessor of
+      "content" -> Span attr <$> inlineValue
+      "attr" -> flip Span inlns <$> attrValue
+      _ -> unknownAccessor accessor
+    Str _ -> case accessor of
+      "text" -> Str <$> stringValue
+      _ -> unknownAccessor accessor
+    Strikeout _ -> content Strikeout
+    Strong _ -> content Strong
+    Superscript _ -> content Superscript
+    Subscript _ -> content Subscript
+  Lua.liftIO $ Storable.poke ptr =<< newStablePtr updatedInline
+  return 0
  where
-   -- Get the contents of an AST element.
-   elementContent :: Peekable a => Lua a
-   elementContent = LuaUtil.rawField idx "c"
+  attrValue = fromAnyValue anyval
+  stringValue = fromAnyValue anyval
+  inlineValue = fromAnyValue anyval
+
+  content constr = if accessor == "content"
+    then constr <$> inlineValue
+    else unknownAccessor accessor
+
+unknownAccessor :: Text -> Lua a
+unknownAccessor accessor = Lua.throwException (unpack ("Unknown accessor: " <> accessor))
+
+fromAnyValue :: Peekable a => AnyValue -> Lua a
+fromAnyValue (AnyValue idx) = Lua.peek idx
+
+------------------------------------------------------------------------
 
 withAttr :: (Attr -> a -> b) -> (LuaAttr, a) -> b
-withAttr f (attributes, x) = f (fromLuaAttr attributes) x
+withAttr f (LuaAttr attributes, x) = f attributes x
 
 -- | Wrapper for Attr
-newtype LuaAttr = LuaAttr { fromLuaAttr :: Attr }
+newtype LuaAttr = LuaAttr Attr
 
 instance Pushable LuaAttr where
   push (LuaAttr (id', classes, kv)) =
@@ -332,8 +451,8 @@ indexElement = \case
     "attr"      -> Lua.push (LuaAttr attr)
     "label"     -> Lua.push label
     "contents"  -> Lua.push contents
-    "tag"       -> Lua.push "Sec"
-    "t"         -> Lua.push "Sec"
+    "tag"       -> Lua.push ("Sec" :: Text)
+    "t"         -> Lua.push ("Sec" :: Text)
     _           -> Lua.pushnil
 
 
@@ -374,7 +493,7 @@ instance Pushable ReaderOptions where
     let indexReaderOptions :: AnyValue -> AnyValue -> Lua Lua.NumResults
         indexReaderOptions _tbl (AnyValue key) = do
           Lua.ltype key >>= \case
-            Lua.TypeString -> Lua.peek key >>= \case
+            Lua.TypeString -> (Lua.peek key :: Lua Text) >>= \case
               "defaultImageExtension" -> Lua.push defaultImageExtension
               "indentedCodeClasses" -> Lua.push indentedCodeClasses
               "stripComments" -> Lua.push stripComments
