@@ -1,7 +1,6 @@
 {-# LANGUAGE MonoLocalBinds      #-}
 {-# LANGUAGE NoImplicitPrelude   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-
 {-
 Copyright (C) 2006-2018 John MacFarlane <jgm@berkeley.edu>
 
@@ -34,14 +33,11 @@ This helper module exports the readers.
 Note:  all of the readers assume that the input text has @'\n'@
 line endings.  So if you get your input text from a web form,
 you should remove @'\r'@ characters using @filter (/='\r')@.
-
 -}
-
 module Text.Pandoc.Readers
   (
     -- * Readers: converting /to/ Pandoc format
     Reader (..)
-  , readers
   , readDocx
   , readOdt
   , readMarkdown
@@ -69,21 +65,20 @@ module Text.Pandoc.Readers
   , readFB2
   , readIpynb
   -- * Miscellaneous
-  , getReader
-  , getDefaultExtensions
+  , knownFormatReader
+  , ioReader
   ) where
 
 import Prelude
 import Control.Monad.Except (throwError)
 import Data.Aeson
 import qualified Data.ByteString.Lazy as BL
-import Data.List (intercalate)
 import Data.Text (Text)
 import Text.Pandoc.Class
 import Text.Pandoc.Definition
 import Text.Pandoc.Error
-import Text.Pandoc.Extensions
-import Text.Pandoc.Options
+import Text.Pandoc.Format
+import Text.Pandoc.Options (ReaderOptions)
 import Text.Pandoc.Readers.CommonMark
 import Text.Pandoc.Readers.Creole
 import Text.Pandoc.Readers.DocBook
@@ -111,57 +106,56 @@ import Text.Pandoc.Readers.Txt2Tags
 import Text.Pandoc.Readers.Vimwiki
 import Text.Pandoc.Readers.Man
 import qualified Text.Pandoc.UTF8 as UTF8
-import Text.Parsec.Error
 
 data Reader m = TextReader (ReaderOptions -> Text -> m Pandoc)
               | ByteStringReader (ReaderOptions -> BL.ByteString -> m Pandoc)
 
 -- | Association list of formats and readers.
-readers :: PandocMonad m => [(String, Reader m)]
-readers = [ ("native"       , TextReader readNative)
-           ,("json"         , TextReader readJSON)
-           ,("markdown"     , TextReader readMarkdown)
-           ,("markdown_strict" , TextReader readMarkdown)
-           ,("markdown_phpextra" , TextReader readMarkdown)
-           ,("markdown_github" , TextReader readMarkdown)
-           ,("markdown_mmd",  TextReader readMarkdown)
-           ,("commonmark"   , TextReader readCommonMark)
-           ,("creole"       , TextReader readCreole)
-           ,("dokuwiki"     , TextReader readDokuWiki)
-           ,("gfm"          , TextReader readCommonMark)
-           ,("rst"          , TextReader readRST)
-           ,("mediawiki"    , TextReader readMediaWiki)
-           ,("vimwiki"      , TextReader readVimwiki)
-           ,("docbook"      , TextReader readDocBook)
-           ,("opml"         , TextReader readOPML)
-           ,("org"          , TextReader readOrg)
-           ,("textile"      , TextReader readTextile) -- TODO : textile+lhs
-           ,("html"         , TextReader readHtml)
-           ,("jats"         , TextReader readJATS)
-           ,("latex"        , TextReader readLaTeX)
-           ,("haddock"      , TextReader readHaddock)
-           ,("twiki"        , TextReader readTWiki)
-           ,("tikiwiki"     , TextReader readTikiWiki)
-           ,("docx"         , ByteStringReader readDocx)
-           ,("odt"          , ByteStringReader readOdt)
-           ,("t2t"          , TextReader readTxt2Tags)
-           ,("epub"         , ByteStringReader readEPUB)
-           ,("muse"         , TextReader readMuse)
-           ,("man"          , TextReader readMan)
-           ,("fb2"          , TextReader readFB2)
-           ,("ipynb"        , TextReader readIpynb)
-           ]
+knownFormatReader :: PandocMonad m => KnownFormat -> Maybe (Reader m)
+knownFormatReader f = case f of
+  CommonMark        -> Just $ TextReader readCommonMark
+  Creole            -> Just $ TextReader readCreole
+  DocBook4          -> Just $ TextReader readDocBook
+  DocBook5          -> Just $ TextReader readDocBook
+  Docx              -> Just $ ByteStringReader readDocx
+  DokuWiki          -> Just $ TextReader readDokuWiki
+  EPUB2             -> Just $ ByteStringReader readEPUB
+  EPUB3             -> Just $ ByteStringReader readEPUB
+  FB2               -> Just $ TextReader readFB2
+  GFM               -> Just $ TextReader readCommonMark
+  HTML4             -> Just $ TextReader readHtml
+  HTML5             -> Just $ TextReader readHtml
+  Haddock           -> Just $ TextReader readHaddock
+  Ipynb             -> Just $ TextReader readIpynb
+  JATS              -> Just $ TextReader readJATS
+  JSON              -> Just $ TextReader readJSON
+  LaTeX             -> Just $ TextReader readLaTeX
+  Man               -> Just $ TextReader readMan
+  Markdown          -> Just $ TextReader readMarkdown
+  Markdown_GitHub   -> Just $ TextReader readMarkdown
+  Markdown_MMD      -> Just $ TextReader readMarkdown
+  Markdown_PHPExtra -> Just $ TextReader readMarkdown
+  Markdown_strict   -> Just $ TextReader readMarkdown
+  MediaWiki         -> Just $ TextReader readMediaWiki
+  Muse              -> Just $ TextReader readMuse
+  Native            -> Just $ TextReader readNative
+  ODT               -> Just $ ByteStringReader readOdt
+  OPML              -> Just $ TextReader readOPML
+  Org               -> Just $ TextReader readOrg
+  RST               -> Just $ TextReader readRST
+  TWiki             -> Just $ TextReader readTWiki
+  Textile           -> Just $ TextReader readTextile
+  TikiWiki          -> Just $ TextReader readTikiWiki
+  Txt2tags          -> Just $ TextReader readTxt2Tags
+  Vimwiki           -> Just $ TextReader readVimwiki
+  _                 -> Nothing
 
--- | Retrieve reader, extensions based on formatSpec (format+extensions).
-getReader :: PandocMonad m => String -> Either String (Reader m, Extensions)
-getReader s =
-  case parseFormatSpec s of
-       Left e  -> Left $ intercalate "\n" [m | Message m <- errorMessages e]
-       Right (readerName, setExts) ->
-           case lookup readerName readers of
-                   Nothing  -> Left $ "Unknown reader: " ++ readerName
-                   Just  r  -> Right (r, setExts $
-                                        getDefaultExtensions readerName)
+-- | Retrieve reader, extensions based on format.
+ioReader :: IOFormat -> Either String (Reader PandocIO)
+ioReader (CustomFormat _) = Left "Cannot use Lua to read"
+ioReader (IOFormat f) = case knownFormatReader f of
+  Nothing -> Left $ "Unknown reader: " ++ show f
+  Just r -> Right r
 
 -- | Read pandoc document from JSON format.
 readJSON :: PandocMonad m

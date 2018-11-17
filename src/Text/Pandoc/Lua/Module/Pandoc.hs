@@ -34,18 +34,19 @@ module Text.Pandoc.Lua.Module.Pandoc
 import Prelude
 import Control.Monad (when)
 import Data.Default (Default (..))
-import Data.Maybe (fromMaybe)
 import Data.Text (pack)
 import Foreign.Lua (Lua, NumResults, Optional, Peekable, Pushable)
 import System.Exit (ExitCode (..))
 import Text.Pandoc.Class (runIO)
 import Text.Pandoc.Definition (Block, Inline)
+import Text.Pandoc.Format (Flavored (..), KnownFormat (Markdown),
+                           parseFlavoredFormat, withDefaultExtensions)
 import Text.Pandoc.Lua.Filter (walkInlines, walkBlocks, LuaFilter)
 import Text.Pandoc.Lua.StackInstances ()
 import Text.Pandoc.Walk (Walkable)
 import Text.Pandoc.Options (ReaderOptions (readerExtensions))
 import Text.Pandoc.Process (pipeProcess)
-import Text.Pandoc.Readers (Reader (..), getReader)
+import Text.Pandoc.Readers (Reader (..), ioReader)
 
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BSL
@@ -74,9 +75,8 @@ walkBlock :: Block -> LuaFilter -> Lua Block
 walkBlock = walkElement
 
 readDoc :: String -> Optional String -> Lua NumResults
-readDoc content formatSpecOrNil = do
-  let formatSpec = fromMaybe "markdown" (Lua.fromOptional formatSpecOrNil)
-  case getReader formatSpec of
+readDoc content formatSpecOrNil =
+  case getReader (Lua.fromOptional formatSpecOrNil) of
     Left  s      -> Lua.raiseError s -- Unknown reader
     Right (reader, es) ->
       case reader of
@@ -87,6 +87,12 @@ readDoc content formatSpecOrNil = do
             Right pd -> (1 :: NumResults) <$ Lua.push pd -- success, push Pandoc
             Left s   -> Lua.raiseError (show s)          -- error while reading
         _  -> Lua.raiseError "Only string formats are supported at the moment."
+ where
+  getReader optionalFormatSpec = do
+    Flavored format exts <- case optionalFormatSpec of
+                              Nothing -> Right (withDefaultExtensions Markdown)
+                              Just f  -> fst <$> parseFlavoredFormat f
+    (,) <$> ioReader format <*> pure exts
 
 -- | Pipes input through a command.
 pipeFn :: String

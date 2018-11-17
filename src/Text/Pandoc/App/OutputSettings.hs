@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NoImplicitPrelude   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -37,30 +36,27 @@ module Text.Pandoc.App.OutputSettings
   , optToOutputSettings
   ) where
 import Prelude
-import qualified Control.Exception as E
 import Control.Monad
 import Control.Monad.Except (catchError, throwError)
 import Control.Monad.Trans
 import Data.Char (toLower)
-import Data.List (find, isPrefixOf, isSuffixOf)
+import Data.List (find, isPrefixOf)
 import Data.Maybe (fromMaybe)
 import Skylighting (defaultSyntaxMap)
 import Skylighting.Parser (addSyntaxDefinition, parseSyntaxDefinition)
 import System.Exit (exitSuccess)
 import System.FilePath
 import System.IO (stdout)
-import Text.Pandoc
-import Text.Pandoc.App.FormatHeuristics (formatFromFilePaths)
+import Text.Pandoc hiding (DZSlides)
 import Text.Pandoc.App.Opt (Opt (..))
 import Text.Pandoc.App.CommandLineOptions (engines)
 import Text.Pandoc.BCP47 (Lang (..), parseBCP47)
+import Text.Pandoc.Format
 import qualified Text.Pandoc.UTF8 as UTF8
 
 -- | Settings specifying how document output should be produced.
 data OutputSettings = OutputSettings
-  { outputFormat :: String
-  , outputWriter :: Writer PandocIO
-  , outputWriterName :: String
+  { outputFormat :: IOFormat
   , outputWriterOptions :: WriterOptions
   , outputPdfProgram :: Maybe String
   }
@@ -83,32 +79,17 @@ optToOutputSettings opts = do
                          Just fp -> Just <$> readUtf8File fp
 
   let pdfOutput = map toLower (takeExtension outputFile) == ".pdf"
-  (writerName, maybePdfProg) <-
+  (Flavored ioFormat writerExts, maybePdfProg) <-
     if pdfOutput
-       then liftIO $ pdfWriterAndProg (optWriter opts) (optPdfEngine opts)
-       else case optWriter opts of
-              Nothing  ->
-                return (formatFromFilePaths "html" [outputFile], Nothing)
-              Just f   -> return (f, Nothing)
+       then pdfWriterAndProg (optWriter opts) (optPdfEngine opts)
+       else (,) <$> (case optWriter opts of
+                       Just f  -> writerFormat f
+                       Nothing -> return .
+                                  fromMaybe (withDefaultExtensions HTML5) $
+                                  flavoredFormatFromFilePath outputFile)
+                <*> pure Nothing
 
-  let format = if ".lua" `isSuffixOf` writerName
-                  then writerName
-                  else map toLower $ baseWriterName writerName
-
-  (writer, writerExts) <-
-            if ".lua" `isSuffixOf` format
-               then return (TextWriter
-                       (\o d -> writeCustom writerName o d)
-                               :: Writer PandocIO, mempty)
-               else case getWriter (map toLower writerName) of
-                         Left e  -> throwError $ PandocAppError $
-                           if format == "pdf"
-                              then e ++ "\n" ++ pdfIsNoWriterErrorMsg
-                              else e
-                         Right (w, es) -> return (w :: Writer PandocIO, es)
-
-
-  let standalone = optStandalone opts || not (isTextFormat format) || pdfOutput
+  let standalone = optStandalone opts || not (isTextFormat ioFormat) || pdfOutput
 
   let addStringAsVariable varname s vars = return $ (varname, s) : vars
 
@@ -158,7 +139,7 @@ optToOutputSettings opts = do
     maybe return (addStringAsVariable "epub-cover-image")
                  (optEpubCoverImage opts)
     >>=
-    (\vars ->  if format == "dzslides"
+    (\vars ->  if ioFormat == IOFormat DZSlides
                   then do
                       dztempl <- UTF8.toString <$> readDataFile
                                    ("dzslides" </> "template.html")
@@ -171,11 +152,13 @@ optToOutputSettings opts = do
 
   templ <- case optTemplate opts of
                   _ | not standalone -> return Nothing
-                  Nothing -> Just <$> getDefaultTemplate format
+                  Nothing -> case unIOFormat ioFormat of
+                               Nothing -> return Nothing
+                               Just f  -> Just <$> getDefaultTemplate f
                   Just tp -> do
                     -- strip off extensions
                     let tp' = case takeExtension tp of
-                                   "" -> tp <.> format
+                                   "" -> tp <.> ioFormatName ioFormat
                                    _  -> tp
                     Just . UTF8.toString <$>
                           ((fst <$> fetchItem tp') `catchError`
@@ -226,15 +209,10 @@ optToOutputSettings opts = do
         , writerPreferAscii      = optAscii opts
         }
   return $ OutputSettings
-    { outputFormat = format
-    , outputWriter = writer
-    , outputWriterName = writerName
+    { outputFormat = ioFormat
     , outputWriterOptions = writerOpts
     , outputPdfProgram = maybePdfProg
     }
-
-baseWriterName :: String -> String
-baseWriterName = takeWhile (\c -> c /= '+' && c /= '-')
 
 pdfIsNoWriterErrorMsg :: String
 pdfIsNoWriterErrorMsg =
@@ -243,34 +221,49 @@ pdfIsNoWriterErrorMsg =
   "\nand specify an output file with " ++
   ".pdf extension (-o filename.pdf)."
 
-pdfWriterAndProg :: Maybe String              -- ^ user-specified writer name
+pdfWriterAndProg :: PandocMonad m
+                 => Maybe String              -- ^ user-specified writer format
                  -> Maybe String              -- ^ user-specified pdf-engine
-                 -> IO (String, Maybe String) -- ^ IO (writerName, maybePdfEngineProg)
+                 -> m (Flavored IOFormat, Maybe String)
+                                              -- ^ m (writerName, maybePdfEngineProg)
 pdfWriterAndProg mWriter mEngine = do
-  let panErr msg = liftIO $ E.throwIO $ PandocAppError msg
-  case go mWriter mEngine of
+  let panErr msg = throwError $ PandocAppError msg
+  mFormat <- maybe (return Nothing) (fmap Just . writerFormat) mWriter
+  case go mFormat mEngine of
       Right (writ, prog) -> return (writ, Just prog)
       Left err           -> panErr err
     where
-      go Nothing Nothing       = Right ("latex", "pdflatex")
-      go (Just writer) Nothing = (writer,) <$> engineForWriter writer
-      go Nothing (Just engine) = (,engine) <$> writerForEngine (takeBaseName engine)
-      go (Just writer) (Just engine) =
-           case find (== (baseWriterName writer, takeBaseName engine)) engines of
-                Just _  -> Right (writer, engine)
+      go Nothing Nothing        = Right (withDefaultExtensions LaTeX, "pdflatex")
+      go (Just writer') Nothing = (writer',) <$> engineForWriter writer'
+      go Nothing (Just engine)  = (,engine) <$> writerForEngine (takeBaseName engine)
+      go (Just writer') (Just engine) =
+           case find (== (unflavor writer', takeBaseName engine)) engines of
+                Just _  -> Right (writer', engine)
                 Nothing -> Left $ "pdf-engine " ++ engine ++
-                           " is not compatible with output format " ++ writer
+                           " is not compatible with output format " ++
+                           ioFormatName (unflavor writer')
 
-      writerForEngine eng = case [f | (f,e) <- engines, e == eng] of
-                                 fmt : _ -> Right fmt
-                                 []      -> Left $
-                                   "pdf-engine " ++ eng ++ " not known"
+      writerForEngine eng = case [ioF | (ioF,e) <- engines, e == eng] of
+                              IOFormat f : _ -> Right $
+                                                      withDefaultExtensions f
+                              _  -> Left $ "pdf-engine " ++ eng ++ " not known"
 
-      engineForWriter "pdf" = Left pdfIsNoWriterErrorMsg
-      engineForWriter w = case [e |  (f,e) <- engines, f == baseWriterName w] of
+      engineForWriter (Flavored w _) = case [e |  (f,e) <- engines, f == w] of
                                 eng : _ -> Right eng
                                 []      -> Left $
-                                   "cannot produce pdf output from " ++ w
+                                   "cannot produce pdf output from " ++
+                                   ioFormatName w
 
-isTextFormat :: String -> Bool
-isTextFormat s = s `notElem` ["odt","docx","epub2","epub3","epub","pptx"]
+writerFormat :: PandocMonad m => String -> m (Flavored IOFormat)
+writerFormat writerName =
+  case parseFlavoredFormat writerName of
+    Left e -> throwError . PandocAppError $
+              if writerName == "pdf"
+              then e ++ "\n" ++ pdfIsNoWriterErrorMsg
+              else e
+    Right (f, warnings) -> f <$ mapM_ report warnings
+
+isTextFormat :: IOFormat -> Bool
+isTextFormat f = case ioWriter f of
+  Right TextWriter{} -> True
+  _                  -> False

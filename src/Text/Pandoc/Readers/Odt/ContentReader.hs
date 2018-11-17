@@ -54,7 +54,7 @@ import qualified Text.XML.Light as XML
 import Text.Pandoc.Builder
 import Text.Pandoc.MediaBag (MediaBag, insertMedia)
 import Text.Pandoc.Shared
-import Text.Pandoc.Extensions (extensionsFromList, Extension(..))
+import Text.Pandoc.Format (extensionsFromList, Extension(..))
 
 import Text.Pandoc.Readers.Odt.Base
 import Text.Pandoc.Readers.Odt.Namespaces

@@ -43,7 +43,7 @@ import Foreign.Lua.Userdata ( ensureUserdataMetatable, pushAnyWithMetatable
                             , toAnyWithName, metatableName)
 import Text.Pandoc.Class (CommonState (..))
 import Text.Pandoc.Definition
-import Text.Pandoc.Extensions (Extensions)
+import Text.Pandoc.Format (Extensions)
 import Text.Pandoc.Logging (LogMessage, showLogMessage)
 import Text.Pandoc.Lua.Util (defineHowTo, pushViaConstructor)
 import Text.Pandoc.Options (ReaderOptions (..), TrackChanges)

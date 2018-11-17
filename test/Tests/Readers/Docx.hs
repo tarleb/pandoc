@@ -13,6 +13,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Tests.Helpers
 import Text.Pandoc
+import Text.Pandoc.Format (KnownFormat (Docx) ,getDefaultExtensions)
 import qualified Text.Pandoc.Class as P
 import Text.Pandoc.MediaBag (MediaBag, lookupMedia, mediaDirectory)
 import Text.Pandoc.UTF8 as UTF8
@@ -28,7 +29,7 @@ noNorm :: Pandoc -> NoNormPandoc
 noNorm = NoNormPandoc
 
 defopts :: ReaderOptions
-defopts = def{ readerExtensions = getDefaultExtensions "docx" }
+defopts = def{ readerExtensions = getDefaultExtensions Docx }
 
 instance ToString NoNormPandoc where
   toString d = T.unpack $ purely (writeNative def{ writerTemplate = s }) $ toPandoc d

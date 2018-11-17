@@ -11,10 +11,11 @@ import System.IO.Unsafe (unsafePerformIO)
 import Test.Tasty
 import Tests.Helpers
 import Text.Pandoc
+import Text.Pandoc.Format (KnownFormat (ODT), getDefaultExtensions)
 import qualified Text.Pandoc.UTF8 as UTF8
 
 defopts :: ReaderOptions
-defopts = def{ readerExtensions = getDefaultExtensions "odt" }
+defopts = def{ readerExtensions = getDefaultExtensions ODT }
 
 tests :: [TestTree]
 tests = testsComparingToMarkdown ++ testsComparingToNative

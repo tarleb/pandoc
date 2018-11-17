@@ -43,6 +43,7 @@ module Text.Pandoc.App (
 import Prelude
 import qualified Control.Exception as E
 import Control.Monad
+import Control.Monad.Except (throwError)
 import Control.Monad.Trans
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as B
@@ -61,14 +62,14 @@ import System.Exit (exitSuccess)
 import System.FilePath
 import System.IO (nativeNewline, stdout)
 import qualified System.IO as IO (Newline (..))
-import Text.Pandoc
-import Text.Pandoc.App.FormatHeuristics (formatFromFilePaths)
+import Text.Pandoc hiding (DZSlides)
 import Text.Pandoc.App.Opt (Opt (..), LineEnding (..), defaultOpts)
 import Text.Pandoc.App.CommandLineOptions (parseOptions, options)
 import Text.Pandoc.App.OutputSettings (OutputSettings (..), optToOutputSettings)
 import Text.Pandoc.BCP47 (Lang (..), parseBCP47)
 import Text.Pandoc.Builder (setMeta, deleteMeta)
 import Text.Pandoc.Filter (Filter (JSONFilter, LuaFilter), applyFilters)
+import Text.Pandoc.Format hiding (Native)
 import Text.Pandoc.PDF (makePDF)
 import Text.Pandoc.Readers.Markdown (yamlToMeta)
 import Text.Pandoc.SelfContained (makeDataURI, makeSelfContained)
@@ -113,38 +114,7 @@ convertWithOpts opts = do
                                         in  return Nothing)
                   Just _    -> return $ optDataDir opts
 
-  -- assign reader and writer based on options and filenames
-  let readerName = case optReader opts of
-                     Just f  -> f
-                     Nothing -> formatFromFilePaths fallback sources
-                       where fallback = if any isURI sources
-                                           then "html"
-                                           else "markdown"
-
   let pdfOutput = map toLower (takeExtension outputFile) == ".pdf"
-
-  -- TODO: we have to get the input and the output into the state for
-  -- the sake of the text2tags reader.
-  (reader, readerExts) <-
-           case getReader readerName of
-                Right (r, es) -> return (r :: Reader PandocIO, es)
-                Left e   -> E.throwIO $ PandocAppError e'
-                  where e' = case readerName of
-                                  "pdf" -> e ++
-                                     "\nPandoc can convert to PDF, but not from PDF."
-                                  "doc" -> e ++
-                                     "\nPandoc can convert from DOCX, but not from DOC.\nTry using Word to save your DOC file as DOCX, and convert that with pandoc."
-                                  _ -> e
-
-  let convertTabs = tabFilter (if optPreserveTabs opts ||
-                                    readerName == "t2t" ||
-                                    readerName == "man"
-                                  then 0
-                                  else optTabStop opts)
-
-      readSources :: [FilePath] -> PandocIO Text
-      readSources srcs = convertTabs . T.intercalate (T.pack "\n") <$>
-                            mapM readSource srcs
 
   let runIO' :: PandocIO a -> IO a
       runIO' f = do
@@ -172,13 +142,51 @@ convertWithOpts opts = do
     setInputFiles (optInputFiles opts)
     setOutputFile (optOutputFile opts)
 
+    -- TODO: we have to get the input and the output into the state for
+    -- the sake of the text2tags reader.
+    Flavored readerFormat readerExts <-
+      case optReader opts of
+        Nothing         -> case flavoredFormatFromFilePaths sources of
+          Just f              -> return f
+          Nothing             -> return . withDefaultExtensions $
+                                 if any isURI sources then HTML5 else Markdown
+        Just readerName -> case parseFlavoredFormat readerName of
+          Right (f, warnings) -> f <$ mapM_ report warnings
+          Left e              -> throwError . PandocAppError $
+                                 case readerName of
+                                   "pdf" -> e ++
+                                            "\nPandoc can convert to PDF, " ++
+                                            "but not from PDF."
+                                   "doc" -> e ++
+                                            "\nPandoc can convert from " ++
+                                            "DOCX, but not from DOC.\n" ++
+                                            "Try using Word to save your DOC " ++
+                                            "file as DOCX, and convert that " ++
+                                            "with pandoc."
+                                   _     -> e
+
+    reader <- case ioReader readerFormat of
+                Left e -> liftIO $ E.throwIO (PandocAppError e)
+                Right x -> return x
+
+    let convertTabs = tabFilter (if optPreserveTabs opts ||
+                                    readerFormat == IOFormat Txt2tags ||
+                                    readerFormat == IOFormat Man
+                                 then 0
+                                 else optTabStop opts)
+
+        readSources :: [FilePath] -> PandocIO Text
+        readSources srcs = convertTabs . T.intercalate (T.pack "\n") <$>
+                              mapM readSource srcs
+
     outputSettings <- optToOutputSettings opts
     let format = outputFormat outputSettings
-    let writer = outputWriter outputSettings
-    let writerName = outputWriterName outputSettings
     let writerOptions = outputWriterOptions outputSettings
 
-    let standalone = optStandalone opts || not (isTextFormat format) || pdfOutput
+    writer <- case ioWriter format of
+                Left e -> liftIO $ E.throwIO (PandocAppError e)
+                Right x -> return x
+    let standalone = optStandalone opts || not (producesTextOutput format) || pdfOutput
 
     -- We don't want to send output to the terminal if the user
     -- does 'pandoc -t docx input.txt'; though we allow them to
@@ -190,9 +198,9 @@ convertWithOpts opts = do
 #else
     istty <- liftIO $ queryTerminal stdOutput
 #endif
-    when (not (isTextFormat format) && istty && isNothing ( optOutputFile opts)) $
+    when (not (producesTextOutput format) && istty && isNothing ( optOutputFile opts)) $
       liftIO $ E.throwIO $ PandocAppError $
-              "Cannot write " ++ format ++ " output to terminal.\n" ++
+              "Cannot write " ++ ioFormatName format ++ " output to terminal.\n" ++
               "Specify an output file using the -o option, or " ++
               "use '-o -' to force output to stdout."
 
@@ -202,7 +210,7 @@ convertWithOpts opts = do
                     Nothing -> UTF8.toString <$> readDataFile "abbreviations"
                     Just f  -> UTF8.toString <$> readFileStrict f
 
-    metadata <- if format == "jats" &&
+    metadata <- if format == IOFormat JATS &&
                    isNothing (lookup "csl" (optMetadata opts)) &&
                    isNothing (lookup "citation-style" (optMetadata opts))
                    then do
@@ -254,17 +262,13 @@ convertWithOpts opts = do
         sourceToDoc sources' =
            case reader of
                 TextReader r
-                  | optFileScope opts || readerName == "json" ->
+                  | optFileScope opts || readerFormat == IOFormat JSON ->
                       mconcat <$> mapM (readSource >=> r readerOpts) sources
                   | otherwise ->
                       readSources sources' >>= r readerOpts
                 ByteStringReader r ->
                   mconcat <$> mapM (readFile' >=> r readerOpts) sources
 
-
-    when (readerName == "markdown_github" ||
-          writerName == "markdown_github") $
-      report $ Deprecated "markdown_github" "Use gfm instead."
 
     setResourcePath (optResourcePath opts)
     mapM_ (uncurry setRequestHeader) (optRequestHeaders opts)
@@ -276,7 +280,7 @@ convertWithOpts opts = do
               >=> return . addNonPresentMetadata metadataFromFile
               >=> return . addMetadata metadata
               >=> applyTransforms transforms
-              >=> applyFilters readerOpts filters' [format]
+              >=> applyFilters readerOpts filters' [ioFormatName format]
               >=> maybe return extractMedia (optExtractMedia opts)
               )
 
@@ -293,9 +297,8 @@ convertWithOpts opts = do
                                      TL.unpack (TE.decodeUtf8With TE.lenientDecode err')
 
         Nothing -> do
-                let htmlFormat = format `elem`
-                      ["html","html4","html5","s5","slidy",
-                       "slideous","dzslides","revealjs"]
+                let htmlFormat = format `elem` map IOFormat
+                                 [HTML4,HTML5,S5,Slidy,Slideous,DZSlides,RevealJS]
                     addNl = if standalone
                                then id
                                else (<> T.singleton '\n')
@@ -308,9 +311,6 @@ convertWithOpts opts = do
                      else return output
 
 type Transform = Pandoc -> Pandoc
-
-isTextFormat :: String -> Bool
-isTextFormat s = s `notElem` ["odt","docx","epub2","epub3","epub","pptx"]
 
 addNonPresentMetadata :: Text.Pandoc.Meta -> Pandoc -> Pandoc
 addNonPresentMetadata newmeta (Pandoc meta bs) = Pandoc (meta <> newmeta) bs
@@ -359,7 +359,7 @@ readSource src = case parseURI src of
                    else BS.readFile fp
           E.catch (return $! UTF8.toText bs)
              (\e -> case e of
-                         TSE.DecodeError _ (Just w) -> do
+                         TSE.DecodeError _ (Just w) ->
                            case BS.elemIndex w bs of
                              Just offset -> E.throwIO $
                                   PandocUTF8DecodingError fp offset w
@@ -381,3 +381,8 @@ writerFn :: MonadIO m => IO.Newline -> FilePath -> Text -> m ()
 -- TODO this implementation isn't maximally efficient:
 writerFn eol "-" = liftIO . UTF8.putStrWith eol . T.unpack
 writerFn eol f   = liftIO . UTF8.writeFileWith eol f . T.unpack
+
+producesTextOutput :: IOFormat -> Bool
+producesTextOutput f = case ioWriter f of
+  Right (TextWriter _) -> True
+  _                    -> False

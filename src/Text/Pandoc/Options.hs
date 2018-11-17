@@ -36,7 +36,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 Data structures and functions for representing parser and writer
 options.
 -}
-module Text.Pandoc.Options ( module Text.Pandoc.Extensions
+module Text.Pandoc.Options ( module Text.Pandoc.Format.Extensions
                            , ReaderOptions(..)
                            , HTMLMathMethod (..)
                            , CiteMethod (..)
@@ -58,7 +58,7 @@ import qualified Data.Set as Set
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Skylighting (SyntaxMap, defaultSyntaxMap)
-import Text.Pandoc.Extensions
+import Text.Pandoc.Format.Extensions
 import Text.Pandoc.Highlighting (Style, pygments)
 
 #ifdef DERIVE_JSON_VIA_TH

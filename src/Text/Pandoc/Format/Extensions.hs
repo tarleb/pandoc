@@ -25,7 +25,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 -}
 
 {- |
-   Module      : Text.Pandoc.Extensions
+   Module      : Text.Pandoc.Format.Extensions
    Copyright   : Copyright (C) 2012-2018 John MacFarlane
    License     : GNU GPL, version 2 or above
 
@@ -35,21 +35,21 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 Data structures and functions for representing markup extensions.
 -}
-module Text.Pandoc.Extensions ( Extension(..)
-                              , Extensions
-                              , emptyExtensions
-                              , extensionsFromList
-                              , parseFormatSpec
-                              , extensionEnabled
-                              , enableExtension
-                              , disableExtension
-                              , getDefaultExtensions
-                              , pandocExtensions
-                              , plainExtensions
-                              , strictExtensions
-                              , phpMarkdownExtraExtensions
-                              , githubMarkdownExtensions
-                              , multimarkdownExtensions )
+module Text.Pandoc.Format.Extensions
+  ( Extension(..)
+  , Extensions
+  , emptyExtensions
+  , extensionsFromList
+  , parseFormatSpec
+  , extensionEnabled
+  , enableExtension
+  , disableExtension
+  , pandocExtensions
+  , plainExtensions
+  , strictExtensions
+  , phpMarkdownExtraExtensions
+  , githubMarkdownExtensions
+  , multimarkdownExtensions )
 where
 import Prelude
 import Data.Bits (clearBit, setBit, testBit, (.|.))
@@ -324,75 +324,6 @@ strictExtensions = extensionsFromList
   , Ext_shortcut_reference_links
   , Ext_spaced_reference_links
   ]
-
--- | Default extensions from format-describing string.
-getDefaultExtensions :: String -> Extensions
-getDefaultExtensions "markdown_strict" = strictExtensions
-getDefaultExtensions "markdown_phpextra" = phpMarkdownExtraExtensions
-getDefaultExtensions "markdown_mmd" = multimarkdownExtensions
-getDefaultExtensions "markdown_github" = githubMarkdownExtensions
-getDefaultExtensions "markdown"        = pandocExtensions
-getDefaultExtensions "ipynb"           =
-  extensionsFromList
-    [ Ext_all_symbols_escapable
-    , Ext_pipe_tables
-    , Ext_raw_html
-    , Ext_fenced_code_blocks
-    , Ext_auto_identifiers
-    , Ext_gfm_auto_identifiers
-    , Ext_backtick_code_blocks
-    , Ext_autolink_bare_uris
-    , Ext_space_in_atx_header
-    , Ext_intraword_underscores
-    , Ext_strikeout
-    , Ext_task_lists
-    , Ext_lists_without_preceding_blankline
-    , Ext_shortcut_reference_links
-    , Ext_tex_math_dollars
-    ]
-getDefaultExtensions "muse"            = extensionsFromList
-                                           [Ext_amuse,
-                                            Ext_auto_identifiers]
-getDefaultExtensions "plain"           = plainExtensions
-getDefaultExtensions "gfm"             = githubMarkdownExtensions
-getDefaultExtensions "commonmark"      = extensionsFromList
-                                          [Ext_raw_html]
-getDefaultExtensions "org"             = extensionsFromList
-                                          [Ext_citations,
-                                           Ext_auto_identifiers]
-getDefaultExtensions "html"            = extensionsFromList
-                                          [Ext_auto_identifiers,
-                                           Ext_native_divs,
-                                           Ext_line_blocks,
-                                           Ext_native_spans]
-getDefaultExtensions "html4"           = getDefaultExtensions "html"
-getDefaultExtensions "html5"           = getDefaultExtensions "html"
-getDefaultExtensions "epub"            = extensionsFromList
-                                          [Ext_raw_html,
-                                           Ext_native_divs,
-                                           Ext_native_spans,
-                                           Ext_epub_html_exts]
-getDefaultExtensions "epub2"           = getDefaultExtensions "epub"
-getDefaultExtensions "epub3"           = getDefaultExtensions "epub"
-getDefaultExtensions "latex"           = extensionsFromList
-                                          [Ext_smart,
-                                           Ext_latex_macros,
-                                           Ext_auto_identifiers]
-getDefaultExtensions "beamer"          = extensionsFromList
-                                          [Ext_smart,
-                                           Ext_latex_macros,
-                                           Ext_auto_identifiers]
-getDefaultExtensions "context"         = extensionsFromList
-                                          [Ext_smart,
-                                           Ext_auto_identifiers]
-getDefaultExtensions "textile"         = extensionsFromList
-                                          [Ext_old_dashes,
-                                           Ext_smart,
-                                           Ext_raw_html,
-                                           Ext_auto_identifiers]
-getDefaultExtensions "opml"            = pandocExtensions -- affects notes
-getDefaultExtensions _                 = extensionsFromList
-                                          [Ext_auto_identifiers]
 
 -- | Parse a format-specifying string into a markup format and a function that
 -- takes Extensions and enables and disables extensions as defined in the format

@@ -45,6 +45,7 @@ import Control.Monad.Trans
 import Data.Aeson.Encode.Pretty (encodePretty', Config(..), keyOrder,
          defConfig, Indent(..), NumberFormat(..))
 import Data.Char (toLower, toUpper)
+import Data.Either (isRight)
 import Data.List (intercalate, sort)
 #ifdef _WINDOWS
 #if MIN_VERSION_base(4,12,0)
@@ -62,6 +63,7 @@ import System.IO (stdout)
 import Text.Pandoc
 import Text.Pandoc.App.Opt (Opt (..), LineEnding (..))
 import Text.Pandoc.Filter (Filter (..))
+import Text.Pandoc.Format
 import Text.Pandoc.Highlighting (highlightingStyles)
 import Text.Pandoc.Writers.Math (defaultMathJaxURL, defaultKaTeXURL)
 import Text.Pandoc.Shared (ordNub, safeRead)
@@ -109,13 +111,13 @@ latexEngines  = ["pdflatex", "lualatex", "xelatex"]
 htmlEngines :: [String]
 htmlEngines  = ["wkhtmltopdf", "weasyprint", "prince"]
 
-engines :: [(String, String)]
-engines = map ("html",) htmlEngines ++
-          map ("html5",) htmlEngines ++
-          map ("latex",) latexEngines ++
-          map ("beamer",) latexEngines ++
-          [ ("ms", "pdfroff")
-          , ("context", "context")
+engines :: [(IOFormat, String)]
+engines = map (IOFormat HTML4,) htmlEngines ++
+          map (IOFormat HTML5,) htmlEngines ++
+          map (IOFormat LaTeX,) latexEngines ++
+          map (IOFormat Beamer,) latexEngines ++
+          [ (IOFormat MS, "pdfroff")
+          , (IOFormat ConTeXt, "context")
           ]
 
 pdfEngines :: [String]
@@ -288,9 +290,13 @@ options =
     , Option "D" ["print-default-template"]
                  (ReqArg
                   (\arg _ -> do
+                     f <- case formatFromName arg of
+                            Just f  -> return f
+                            Nothing -> E.throwIO . PandocAppError $
+                                       "Unknown format: " ++ arg
                      templ <- runIO $ do
                                 setUserDataDir Nothing
-                                getDefaultTemplate arg
+                                getDefaultTemplate f
                      case templ of
                           Right "" -> -- e.g. for docx, odt, json:
                             E.throwIO $ PandocCouldNotFindDataFileError
@@ -348,7 +354,7 @@ options =
                     case toLower <$> arg of
                       "crlf"   -> return opt { optEol = CRLF }
                       "lf"     -> return opt { optEol = LF }
-                      "native" -> return opt { optEol = Native }
+                      "native" -> return opt { optEol = Text.Pandoc.App.Opt.Native }
                       -- mac-syntax (cr) is not supported in ghc-base.
                       _      -> E.throwIO $ PandocOptionError
                                 "--eol must be crlf, lf, or native")
@@ -811,7 +817,11 @@ options =
     , Option "" ["list-extensions"]
                  (OptArg
                   (\arg _ -> do
-                     let exts = getDefaultExtensions (fromMaybe "markdown" arg)
+                     let exts = fromMaybe (getDefaultExtensions Markdown) $ do
+                           arg' <- arg
+                           case parseFlavoredFormat arg' of
+                             Left _ -> Nothing
+                             Right (Flavored _ exts', _) -> Just exts'
                      let showExt x = (if extensionEnabled x exts
                                          then '+'
                                          else '-') : drop 4 (show x)
@@ -925,10 +935,12 @@ uppercaseFirstLetter (c:cs) = toUpper c : cs
 uppercaseFirstLetter []     = []
 
 readersNames :: [String]
-readersNames = sort (map fst (readers :: [(String, Reader PandocIO)]))
+readersNames = sort . map show $
+  filter (isRight . ioReader . IOFormat) [minBound .. maxBound]
 
 writersNames :: [String]
-writersNames = sort (map fst (writers :: [(String, Writer PandocIO)]))
+writersNames = sort . map show $
+  filter (isRight . ioWriter . IOFormat) [minBound .. maxBound]
 
 splitField :: String -> (String, String)
 splitField s =

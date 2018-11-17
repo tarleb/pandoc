@@ -44,33 +44,33 @@ import Text.DocTemplates (Template, TemplateTarget, applyTemplate,
                           compileTemplate, renderTemplate, varListToJSON)
 import Text.Pandoc.Class (PandocMonad, readDataFile)
 import Text.Pandoc.Error
+import Text.Pandoc.Format
 import qualified Text.Pandoc.UTF8 as UTF8
 
 -- | Get default template for the specified writer.
 getDefaultTemplate :: PandocMonad m
-                   => String           -- ^ Name of writer
+                   => KnownFormat           -- ^ Name of writer
                    -> m String
-getDefaultTemplate writer = do
-  let format = takeWhile (`notElem` ("+-" :: String)) writer  -- strip off extensions
-  case format of
+getDefaultTemplate format =
+  case name format of
        "native"  -> return ""
        "json"    -> return ""
        "docx"    -> return ""
        "fb2"     -> return ""
        "pptx"    -> return ""
        "ipynb"   -> return ""
-       "odt"     -> getDefaultTemplate "opendocument"
-       "html"    -> getDefaultTemplate "html5"
-       "docbook" -> getDefaultTemplate "docbook5"
-       "epub"    -> getDefaultTemplate "epub3"
-       "beamer"  -> getDefaultTemplate "latex"
-       "markdown_strict"   -> getDefaultTemplate "markdown"
-       "multimarkdown"     -> getDefaultTemplate "markdown"
-       "markdown_github"   -> getDefaultTemplate "markdown"
-       "markdown_mmd"      -> getDefaultTemplate "markdown"
-       "markdown_phpextra" -> getDefaultTemplate "markdown"
-       "gfm"               -> getDefaultTemplate "commonmark"
-       _        -> let fname = "templates" </> "default" <.> format
+       "odt"     -> getDefaultTemplate OpenDocument
+       "html"    -> getDefaultTemplate HTML5
+       "docbook" -> getDefaultTemplate DocBook5
+       "epub"    -> getDefaultTemplate EPUB3
+       "beamer"  -> getDefaultTemplate LaTeX
+       "markdown_strict"   -> getDefaultTemplate Markdown
+       "multimarkdown"     -> getDefaultTemplate Markdown
+       "markdown_github"   -> getDefaultTemplate Markdown
+       "markdown_mmd"      -> getDefaultTemplate Markdown
+       "markdown_phpextra" -> getDefaultTemplate Markdown
+       "gfm"               -> getDefaultTemplate CommonMark
+       _        -> let fname = "templates" </> "default" <.> name format
                    in  UTF8.toString <$> readDataFile fname
 
 -- | Like 'applyTemplate', but runs in PandocMonad and

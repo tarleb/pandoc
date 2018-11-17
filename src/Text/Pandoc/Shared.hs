@@ -142,7 +142,7 @@ import qualified Text.Pandoc.Builder as B
 import Data.Time
 import Text.Pandoc.Asciify (toAsciiChar)
 import Text.Pandoc.Definition
-import Text.Pandoc.Extensions (Extensions, Extension(..), extensionEnabled)
+import Text.Pandoc.Format.Extensions (Extensions, Extension(..), extensionEnabled)
 import Text.Pandoc.Generic (bottomUp)
 import Text.Pandoc.Pretty (charWidth)
 import Text.Pandoc.Walk

@@ -2,6 +2,7 @@
 import Prelude
 import Weigh
 import Text.Pandoc
+import qualified Text.Pandoc.Format as Format
 import Data.Text (Text)
 
 main :: IO ()
@@ -30,8 +31,8 @@ weighWriter :: Pandoc -> String -> (Pandoc -> Text) -> Weigh ()
 weighWriter doc name writer = func (name ++ " writer") writer doc
 
 weighReader :: Pandoc -> String -> (Text -> Pandoc) -> Weigh ()
-weighReader doc name reader = do
-  case lookup name writers of
+weighReader doc name reader =
+  case Format.formatFromName name >>= knownFormatWriter of
        Just (TextWriter writer) ->
          let inp = either (error . show) id $ runPure $ writer def{ writerWrapText = WrapAuto} doc
          in func (name ++ " reader") reader inp

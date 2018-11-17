@@ -12,11 +12,12 @@ import Data.Text (Text)
 import Tests.Helpers (ToString, purely, test)
 import Test.Tasty (TestTree)
 import Text.Pandoc (Pandoc, ReaderOptions (readerExtensions),
-                    def, getDefaultExtensions, readOrg)
+                    def, readOrg)
 import Text.Pandoc.Builder (Inlines, smallcaps, space, spanWith, str)
+import Text.Pandoc.Format (KnownFormat (Org), getDefaultExtensions)
 
 org :: Text -> Pandoc
-org = purely $ readOrg def{ readerExtensions = getDefaultExtensions "org" }
+org = purely $ readOrg def{ readerExtensions = getDefaultExtensions Org }
 
 infix 4 =:
 (=:) :: ToString c

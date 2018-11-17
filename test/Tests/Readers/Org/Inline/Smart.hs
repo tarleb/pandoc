@@ -8,12 +8,13 @@ import Test.Tasty (TestTree)
 import Tests.Helpers ((=?>), purely, test)
 import Text.Pandoc (ReaderOptions (readerExtensions),
                     Extension (Ext_smart), def, enableExtension,
-                    getDefaultExtensions, readOrg)
+                    readOrg)
 import Text.Pandoc.Builder
+import Text.Pandoc.Format (KnownFormat (Org), getDefaultExtensions)
 
 orgSmart :: Text -> Pandoc
 orgSmart = purely $
-  let extensionsSmart = enableExtension Ext_smart (getDefaultExtensions "org")
+  let extensionsSmart = enableExtension Ext_smart (getDefaultExtensions Org)
   in readOrg def{ readerExtensions = extensionsSmart }
 
 tests :: [TestTree]

@@ -85,7 +85,7 @@ end
 
 function test_failing_read ()
   local res, err = pcall(pandoc.read, 'foo', 'nosuchreader')
-  return not res and err:match 'Unknown reader: nosuchreader'
+  return not res and err:match 'Unknown format: nosuchreader'
 end
 
 -- Stringify

@@ -1,4 +1,6 @@
-{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE NoImplicitPrelude   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-
 Copyright (C) 2006-2018 John MacFarlane <jgm@berkeley.edu>
 
@@ -16,10 +18,6 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 -}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 {- |
    Module      : Text.Pandoc
    Copyright   : Copyright (C) 2006-2018 John MacFarlane
@@ -35,7 +33,8 @@ module Text.Pandoc.Writers
   (
     -- * Writers: converting /from/ Pandoc format
       Writer(..)
-    , writers
+    , knownFormatWriter
+    -- , writers
     , writeAsciiDoc
     , writeBeamer
     , writeCommonMark
@@ -81,17 +80,17 @@ module Text.Pandoc.Writers
     , writeTexinfo
     , writeTextile
     , writeZimWiki
-    , getWriter
+    , ioWriter
     ) where
 
 import Prelude
 import Data.Aeson
 import qualified Data.ByteString.Lazy as BL
-import Data.List (intercalate)
 import Data.Text (Text)
 import Text.Pandoc.Class
-import Text.Pandoc.Definition
-import Text.Pandoc.Options
+import Text.Pandoc.Definition (Pandoc)
+import Text.Pandoc.Options (WriterOptions)
+import Text.Pandoc.Format
 import qualified Text.Pandoc.UTF8 as UTF8
 import Text.Pandoc.Writers.AsciiDoc
 import Text.Pandoc.Writers.CommonMark
@@ -125,76 +124,68 @@ import Text.Pandoc.Writers.TEI
 import Text.Pandoc.Writers.Texinfo
 import Text.Pandoc.Writers.Textile
 import Text.Pandoc.Writers.ZimWiki
-import Text.Parsec.Error
 
 data Writer m = TextWriter (WriterOptions -> Pandoc -> m Text)
               | ByteStringWriter (WriterOptions -> Pandoc -> m BL.ByteString)
 
--- | Association list of formats and writers.
-writers :: PandocMonad m => [ ( String, Writer m) ]
-writers = [
-   ("native"       , TextWriter writeNative)
-  ,("json"         , TextWriter $ \o d -> writeJSON o d)
-  ,("docx"         , ByteStringWriter writeDocx)
-  ,("odt"          , ByteStringWriter writeODT)
-  ,("pptx"         , ByteStringWriter writePowerpoint)
-  ,("epub"         , ByteStringWriter writeEPUB3)
-  ,("epub2"        , ByteStringWriter writeEPUB2)
-  ,("epub3"        , ByteStringWriter writeEPUB3)
-  ,("fb2"          , TextWriter writeFB2)
-  ,("ipynb"        , TextWriter writeIpynb)
-  ,("html"         , TextWriter writeHtml5String)
-  ,("html4"        , TextWriter writeHtml4String)
-  ,("html5"        , TextWriter writeHtml5String)
-  ,("icml"         , TextWriter writeICML)
-  ,("s5"           , TextWriter writeS5)
-  ,("slidy"        , TextWriter writeSlidy)
-  ,("slideous"     , TextWriter writeSlideous)
-  ,("dzslides"     , TextWriter writeDZSlides)
-  ,("revealjs"     , TextWriter writeRevealJs)
-  ,("docbook"      , TextWriter writeDocbook5)
-  ,("docbook4"     , TextWriter writeDocbook4)
-  ,("docbook5"     , TextWriter writeDocbook5)
-  ,("jats"         , TextWriter writeJATS)
-  ,("opml"         , TextWriter writeOPML)
-  ,("opendocument" , TextWriter writeOpenDocument)
-  ,("latex"        , TextWriter writeLaTeX)
-  ,("beamer"       , TextWriter writeBeamer)
-  ,("context"      , TextWriter writeConTeXt)
-  ,("texinfo"      , TextWriter writeTexinfo)
-  ,("man"          , TextWriter writeMan)
-  ,("ms"           , TextWriter writeMs)
-  ,("markdown"     , TextWriter writeMarkdown)
-  ,("markdown_strict" , TextWriter writeMarkdown)
-  ,("markdown_phpextra" , TextWriter writeMarkdown)
-  ,("markdown_github" , TextWriter writeMarkdown)
-  ,("markdown_mmd" , TextWriter writeMarkdown)
-  ,("plain"        , TextWriter writePlain)
-  ,("rst"          , TextWriter writeRST)
-  ,("mediawiki"    , TextWriter writeMediaWiki)
-  ,("dokuwiki"     , TextWriter writeDokuWiki)
-  ,("zimwiki"      , TextWriter writeZimWiki)
-  ,("textile"      , TextWriter writeTextile)
-  ,("rtf"          , TextWriter writeRTF)
-  ,("org"          , TextWriter writeOrg)
-  ,("asciidoc"     , TextWriter writeAsciiDoc)
-  ,("haddock"      , TextWriter writeHaddock)
-  ,("commonmark"   , TextWriter writeCommonMark)
-  ,("gfm"          , TextWriter writeCommonMark)
-  ,("tei"          , TextWriter writeTEI)
-  ,("muse"         , TextWriter writeMuse)
-  ]
+-- | Get a writer for the given format.
+knownFormatWriter :: PandocMonad m => KnownFormat -> Maybe (Writer m)
+knownFormatWriter f = case f of
+  AsciiDoc          -> Just $ TextWriter writeAsciiDoc
+  Beamer            -> Just $ TextWriter writeBeamer
+  CommonMark        -> Just $ TextWriter writeCommonMark
+  ConTeXt           -> Just $ TextWriter writeConTeXt
+  DZSlides          -> Just $ TextWriter writeDZSlides
+  DocBook4          -> Just $ TextWriter writeDocbook4
+  DocBook5          -> Just $ TextWriter writeDocbook5
+  Docx              -> Just $ ByteStringWriter writeDocx
+  DokuWiki          -> Just $ TextWriter writeDokuWiki
+  EPUB2             -> Just $ ByteStringWriter writeEPUB2
+  EPUB3             -> Just $ ByteStringWriter writeEPUB3
+  FB2               -> Just $ TextWriter writeFB2
+  GFM               -> Just $ TextWriter writeCommonMark
+  HTML4             -> Just $ TextWriter writeHtml4String
+  HTML5             -> Just $ TextWriter writeHtml5String
+  Haddock           -> Just $ TextWriter writeHaddock
+  ICML              -> Just $ TextWriter writeICML
+  Ipynb             -> Just $ TextWriter writeIpynb
+  JATS              -> Just $ TextWriter writeJATS
+  JSON              -> Just $ TextWriter writeJSON
+  LaTeX             -> Just $ TextWriter writeLaTeX
+  MS                -> Just $ TextWriter writeMs
+  Man               -> Just $ TextWriter writeMan
+  Markdown          -> Just $ TextWriter writeMarkdown
+  Markdown_GitHub   -> Just $ TextWriter writeMarkdown
+  Markdown_MMD      -> Just $ TextWriter writeMarkdown
+  Markdown_PHPExtra -> Just $ TextWriter writeMarkdown
+  Markdown_strict   -> Just $ TextWriter writeMarkdown
+  MediaWiki         -> Just $ TextWriter writeMediaWiki
+  Muse              -> Just $ TextWriter writeMuse
+  Native            -> Just $ TextWriter writeNative
+  ODT               -> Just $ ByteStringWriter writeODT
+  OPML              -> Just $ TextWriter writeOPML
+  OpenDocument      -> Just $ TextWriter writeOpenDocument
+  Org               -> Just $ TextWriter writeOrg
+  Plain             -> Just $ TextWriter writePlain
+  Pptx              -> Just $ ByteStringWriter writePowerpoint
+  RST               -> Just $ TextWriter writeRST
+  RTF               -> Just $ TextWriter writeRTF
+  RevealJS          -> Just $ TextWriter writeRevealJs
+  S5                -> Just $ TextWriter writeS5
+  Slideous          -> Just $ TextWriter writeSlideous
+  Slidy             -> Just $ TextWriter writeSlidy
+  TEI               -> Just $ TextWriter writeTEI
+  Texinfo           -> Just $ TextWriter writeTexinfo
+  Textile           -> Just $ TextWriter writeTextile
+  ZimWiki           -> Just $ TextWriter writeZimWiki
+  _                 -> Nothing
 
--- | Retrieve writer, extensions based on formatSpec (format+extensions).
-getWriter :: PandocMonad m => String -> Either String (Writer m, Extensions)
-getWriter s
-  = case parseFormatSpec s of
-         Left e  -> Left $ intercalate "\n" [m | Message m <- errorMessages e]
-         Right (writerName, setExts) ->
-             case lookup writerName writers of
-                     Nothing -> Left $ "Unknown writer: " ++ writerName
-                     Just r -> Right (r, setExts $
-                                  getDefaultExtensions writerName)
+-- | Retrieve writer for the chosen format
+ioWriter :: IOFormat -> Either String (Writer PandocIO)
+ioWriter (CustomFormat fp)  = return $ TextWriter (\o d -> writeCustom fp o d)
+ioWriter (IOFormat f) = case knownFormatWriter f of
+  Nothing -> Left ("Unknown writer: " ++ show f)
+  Just r  -> Right r
 
 writeJSON :: PandocMonad m => WriterOptions -> Pandoc -> m Text
 writeJSON _ = return . UTF8.toText . BL.toStrict . encode

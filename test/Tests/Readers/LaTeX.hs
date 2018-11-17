@@ -14,10 +14,10 @@ import Tests.Helpers
 import Text.Pandoc
 import Text.Pandoc.Arbitrary ()
 import Text.Pandoc.Builder
+import Text.Pandoc.Format (KnownFormat (LaTeX), getDefaultExtensions)
 
 latex :: Text -> Pandoc
-latex = purely $ readLaTeX def{
-                   readerExtensions = getDefaultExtensions "latex" }
+latex = purely $ readLaTeX def{ readerExtensions = getDefaultExtensions LaTeX }
 
 infix 4 =:
 (=:) :: ToString c

@@ -54,7 +54,7 @@ import qualified Text.Pandoc.Builder as B
 import Text.Pandoc.Class (PandocMonad, insertMedia)
 import Text.Pandoc.Definition hiding (Attr)
 import Text.Pandoc.Error
-import Text.Pandoc.Extensions (Extension (Ext_raw_html), enableExtension)
+import Text.Pandoc.Format (Extension (Ext_raw_html), enableExtension)
 import Text.Pandoc.MIME (MimeType)
 import Text.Pandoc.Options (ReaderOptions (..))
 import Text.Pandoc.Readers.HTML (readHtml)
