@@ -715,6 +715,14 @@ executable pandoc
   buildable:       True
   other-modules:   Paths_pandoc
 
+executable pandoclua
+  import:          common-executable
+  hs-source-dirs:  app
+  main-is:         pandoclua.hs
+  build-depends:   hslua >=1.1.0 && <1.4
+  buildable:       True
+  other-modules:   Paths_pandoc
+
 executable trypandoc
   import:          common-executable
   main-is:         trypandoc.hs
