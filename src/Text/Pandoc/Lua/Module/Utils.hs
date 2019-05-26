@@ -43,6 +43,7 @@ pushModule mbDatadir = do
   addFunction "sha1" sha1
   addFunction "stringify" stringify
   addFunction "to_roman_numeral" toRomanNumeral
+  addFunction "tostring" tostring
   return 1
 
 -- | Squashes a list of blocks into inlines.
@@ -109,6 +110,17 @@ stringifyMetaValue mv = case mv of
 
 equals :: AstElement -> AstElement -> Lua Bool
 equals e1 e2 = return (e1 == e2)
+
+tostring :: AstElement -> Lua String
+tostring el = return $ case el of
+  PandocElement pd -> show pd
+  InlineElement i  -> show i
+  BlockElement b   -> show b
+  MetaElement m    -> show m
+  CitationElement c  -> show c
+  MetaValueElement m -> show m
+  ListAttributesElement la -> show la
+  AttrElement attr -> show attr
 
 data AstElement
   = PandocElement Pandoc
