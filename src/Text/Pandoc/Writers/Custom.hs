@@ -16,13 +16,14 @@ module Text.Pandoc.Writers.Custom ( writeCustom ) where
 import Control.Arrow ((***))
 import Control.Exception
 import Control.Monad (when)
+import Control.Monad.IO.Class (MonadIO)
 import Data.List (intersperse)
 import qualified Data.Map as M
 import qualified Data.Text as T
 import Data.Text (Text, pack)
 import Foreign.Lua (Lua, Pushable)
 import Text.DocLayout (render, literal)
-import Text.Pandoc.Class.PandocIO (PandocIO)
+import Text.Pandoc.Class.PandocMonad (PandocMonad)
 import Text.Pandoc.Definition
 import Text.Pandoc.Lua (Global (..), runLua, setGlobals)
 import Text.Pandoc.Lua.Util (addField, dofileWithTraceback)
@@ -79,7 +80,11 @@ instance (Pushable a, Pushable b) => Pushable (KeyValue a b) where
     Lua.rawset (Lua.nthFromTop 3)
 
 -- | Convert Pandoc to custom markup.
-writeCustom :: FilePath -> WriterOptions -> Pandoc -> PandocIO Text
+writeCustom :: (PandocMonad m, MonadIO m)
+            => FilePath
+            -> WriterOptions
+            -> Pandoc
+            -> m Text
 writeCustom luaFile opts doc@(Pandoc meta _) = do
   let globals = [ PANDOC_DOCUMENT doc
                 , PANDOC_SCRIPT_FILE luaFile
@@ -87,8 +92,7 @@ writeCustom luaFile opts doc@(Pandoc meta _) = do
   res <- runLua $ do
     setGlobals globals
     stat <- dofileWithTraceback luaFile
-    -- check for error in lua script (later we'll change the return type
-    -- to handle this more gracefully):
+    -- check for error in lua script
     when (stat /= Lua.OK)
       Lua.throwTopMessage
     rendered <- docToCustom opts doc

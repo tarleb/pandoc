@@ -76,12 +76,13 @@ module Text.Pandoc.Writers
     ) where
 
 import Control.Monad.Except (throwError)
+import Control.Monad.IO.Class (MonadIO)
 import Control.Monad (unless)
 import Data.Aeson
 import qualified Data.ByteString.Lazy as BL
 import Data.Text (Text)
 import qualified Data.Text as T
-import Text.Pandoc.Class
+import Text.Pandoc.Class.PandocMonad (PandocMonad (..))
 import Text.Pandoc.Definition
 import Text.Pandoc.Options
 import qualified Text.Pandoc.UTF8 as UTF8
@@ -193,7 +194,9 @@ writers = [
   ]
 
 -- | Retrieve writer, extensions based on formatSpec (format+extensions).
-getWriter :: PandocMonad m => Text -> m (Writer m, Extensions)
+getWriter :: (MonadIO m, PandocMonad m)
+          => Text
+          -> m (Writer m, Extensions)
 getWriter s =
   case parseFormatSpec s of
         Left e  -> throwError $ PandocAppError
