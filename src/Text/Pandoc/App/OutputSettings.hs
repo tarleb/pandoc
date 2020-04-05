@@ -90,12 +90,7 @@ optToOutputSettings opts = do
                   then writerName
                   else T.toLower $ baseWriterName writerName
 
-  (writer :: Writer PandocIO, writerExts) <-
-            if ".lua" `T.isSuffixOf` format
-               then return (TextWriter
-                       (\o d -> writeCustom (T.unpack writerName) o d)
-                               :: Writer PandocIO, mempty)
-               else getWriter (T.toLower writerName)
+  (writer, writerExts) <- writerWithExtensions format writerName
 
   let standalone = optStandalone opts || not (isTextFormat format) || pdfOutput
 
@@ -222,6 +217,16 @@ optToOutputSettings opts = do
 
 baseWriterName :: T.Text -> T.Text
 baseWriterName = T.takeWhile (\c -> c /= '+' && c /= '-')
+
+-- | Get writer and default extensions for the given format.
+writerWithExtensions :: (MonadIO m, PandocMonad m)
+                     => T.Text           -- ^ Output format
+                     -> T.Text           -- ^ Writer name
+                     -> m (Writer m, Extensions)
+writerWithExtensions format writerName =
+  if ".lua" `T.isSuffixOf` format
+  then return (TextWriter (writeCustom (T.unpack writerName)), mempty)
+  else getWriter (T.toLower writerName)
 
 pdfWriterAndProg :: Maybe T.Text              -- ^ user-specified writer name
                  -> Maybe String              -- ^ user-specified pdf-engine
