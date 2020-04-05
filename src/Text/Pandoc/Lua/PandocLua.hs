@@ -59,7 +59,8 @@ liftPandocLua = PandocLua
 
 -- | Evaluate a @'PandocLua'@ computation, running all contained Lua
 -- operations..
-runPandocLua :: PandocLua a -> PandocIO a
+runPandocLua :: (MonadIO m, PandocMonad m)
+             => PandocLua a -> m a
 runPandocLua pLua = do
   origState <- getCommonState
   globals <- defaultGlobals
@@ -103,7 +104,7 @@ loadDefaultModule name = do
       throwError $ PandocLuaError (T.pack err)
 
 -- | Global variables which should always be set.
-defaultGlobals :: PandocIO [Global]
+defaultGlobals :: (MonadIO m, PandocMonad m) => m [Global]
 defaultGlobals = do
   commonState <- getCommonState
   return

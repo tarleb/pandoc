@@ -14,11 +14,11 @@ module Text.Pandoc.Lua.Init
 
 import Control.Monad (when)
 import Control.Monad.Catch (try)
-import Control.Monad.Trans (MonadIO (..))
+import Control.Monad.IO.Class (MonadIO (..))
 import Data.Data (Data, dataTypeConstrs, dataTypeOf, showConstr)
 import Foreign.Lua (Lua)
 import GHC.IO.Encoding (getForeignEncoding, setForeignEncoding, utf8)
-import Text.Pandoc.Class.PandocMonad (readDataFile)
+import Text.Pandoc.Class.PandocMonad (PandocMonad, readDataFile)
 import Text.Pandoc.Class.PandocIO (PandocIO)
 import Text.Pandoc.Error (PandocError)
 import Text.Pandoc.Lua.Packages (installPandocPackageSearcher)
@@ -28,9 +28,11 @@ import qualified Foreign.Lua as Lua
 import qualified Text.Pandoc.Definition as Pandoc
 import qualified Text.Pandoc.Lua.Module.Pandoc as ModulePandoc
 
--- | Run the lua interpreter, using pandoc's default way of environment
+-- | Run the Lua interpreter, using pandoc's default way of environment
 -- initialization.
-runLua :: Lua a -> PandocIO (Either PandocError a)
+runLua :: (MonadIO m, PandocMonad m)
+       => Lua a
+       -> m (Either PandocError a)
 runLua luaOp = do
   enc <- liftIO $ getForeignEncoding <* setForeignEncoding utf8
   res <- runPandocLua . try $ do
