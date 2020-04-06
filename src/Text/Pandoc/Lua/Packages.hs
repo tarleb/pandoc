@@ -22,6 +22,7 @@ import Text.Pandoc.Class.PandocIO (runIO)
 import Text.Pandoc.Class.PandocMonad (readDataFile, setUserDataDir)
 
 import qualified Foreign.Lua as Lua
+import qualified Foreign.Lua.Module.DocLayout as DocLayout
 import Text.Pandoc.Lua.Module.Pandoc as Pandoc
 import Text.Pandoc.Lua.Module.MediaBag as MediaBag
 import Text.Pandoc.Lua.Module.System as System
@@ -52,6 +53,7 @@ pandocPackageSearcher pkgParams pkgName =
   case pkgName of
     "pandoc"          -> let datadir = luaPkgDataDir pkgParams
                          in pushWrappedHsFun (Pandoc.pushModule datadir)
+    "pandoc.doclayout" -> pushWrappedHsFun DocLayout.pushModule
     "pandoc.mediabag" -> pushWrappedHsFun MediaBag.pushModule
     "pandoc.system"   -> pushWrappedHsFun System.pushModule
     "pandoc.types"    -> pushWrappedHsFun Types.pushModule

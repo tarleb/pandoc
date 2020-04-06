@@ -19,10 +19,10 @@ import Control.Monad (when)
 import Data.List (intersperse)
 import qualified Data.Map as M
 import qualified Data.Text as T
-import Data.Text (Text, pack)
+import Data.Text (Text)
 import Data.Typeable
 import Foreign.Lua (Lua, Pushable)
-import Text.DocLayout (render, literal)
+import Text.DocLayout (Doc, render)
 import Text.Pandoc.Class.PandocIO (PandocIO)
 import Text.Pandoc.Definition
 import Text.Pandoc.Lua (Global (..), LuaException (LuaException),
@@ -35,11 +35,30 @@ import Text.Pandoc.Writers.Shared
 
 import qualified Foreign.Lua as Lua
 
-attrToMap :: Attr -> M.Map T.Text T.Text
+attrToMap :: Attr -> M.Map Text Text
 attrToMap (id',classes,keyvals) = M.fromList
     $ ("id", id')
     : ("class", T.unwords classes)
     : keyvals
+
+-- | Checks if the global variable @PANDOC_USE_DOCLAYOUT@ is set
+-- and non-nil. Only then should Doc types be pushed, Lua strings
+-- otherwise.
+useDocLayout :: Lua Bool
+useDocLayout = do
+  Lua.pushglobaltable
+  Lua.pushstring "PANDOC_USE_DOCLAYOUT"
+  Lua.rawget (Lua.nthFromTop 2)
+  result <- Lua.toboolean Lua.stackTop
+  Lua.pop 2
+  return result
+
+pushDoc :: Doc Text -> Lua ()
+pushDoc d = do
+  useDoc  <- useDocLayout
+  if useDoc
+    then Lua.push (d :: Doc Text)
+    else Lua.push (render Nothing d :: Text)
 
 newtype Stringify a = Stringify a
 
@@ -47,10 +66,10 @@ instance Pushable (Stringify Format) where
   push (Stringify (Format f)) = Lua.push (T.toLower f)
 
 instance Pushable (Stringify [Inline]) where
-  push (Stringify ils) = Lua.push =<< inlineListToCustom ils
+  push (Stringify ils) = pushDoc =<< inlineListToCustom ils
 
 instance Pushable (Stringify [Block]) where
-  push (Stringify blks) = Lua.push =<< blockListToCustom blks
+  push (Stringify blks) = pushDoc =<< blockListToCustom blks
 
 instance Pushable (Stringify MetaValue) where
   push (Stringify (MetaMap m))       = Lua.push (fmap Stringify m)
@@ -99,31 +118,39 @@ writeCustom luaFile opts doc@(Pandoc meta _) = do
     -- to handle this more gracefully):
     when (stat /= Lua.OK) $
       Lua.tostring' (-1) >>= throw . PandocLuaException . UTF8.toText
-    rendered <- docToCustom opts doc
+    body    <- docToCustom opts doc
     context <- metaToContext opts
-               (fmap (literal . pack) . blockListToCustom)
-               (fmap (literal . pack) . inlineListToCustom)
-               meta
-    return (pack rendered, context)
+                             blockListToCustom
+                             inlineListToCustom
+                             meta
+    return (body, context)
   let (body, context) = case res of
         Left (LuaException msg) -> throw (PandocLuaException msg)
         Right x -> x
   return $
-    case writerTemplate opts of
-       Nothing  -> body
-       Just tpl -> render Nothing $
-                    renderTemplate tpl $ setField "body" body context
+    let colwidth = if writerWrapText opts == WrapAuto
+                   then Just $ writerColumns opts
+                   else Nothing
+    in render colwidth $ case writerTemplate opts  of
+                           Nothing  -> body
+                           Just tpl -> renderTemplate tpl $
+                                       setField "body" body context
 
-docToCustom :: WriterOptions -> Pandoc -> Lua String
+docToCustom :: WriterOptions -> Pandoc -> Lua (Doc Text)
 docToCustom opts (Pandoc (Meta metamap) blocks) = do
   body <- blockListToCustom blocks
-  Lua.callFunc "Doc" body (fmap Stringify metamap) (writerVariables opts)
+  useDoc <- useDocLayout
+  let metamap' = fmap Stringify metamap
+  let variables = writerVariables opts
+  if useDoc
+    then Lua.callFunc "Doc"  body                 metamap' variables
+    else Lua.callFunc "Doc" (render Nothing body) metamap' variables
 
 -- | Convert Pandoc block element to Custom.
 blockToCustom :: Block         -- ^ Block element
-              -> Lua String
+              -> Lua (Doc Text)
 
-blockToCustom Null = return ""
+blockToCustom Null = return mempty
 
 blockToCustom (Plain inlines) = Lua.callFunc "Plain" (Stringify inlines)
 
@@ -171,20 +198,20 @@ blockToCustom (Div attr items) =
 
 -- | Convert list of Pandoc block elements to Custom.
 blockListToCustom :: [Block]       -- ^ List of block elements
-                  -> Lua String
+                  -> Lua (Doc Text)
 blockListToCustom xs = do
   blocksep <- Lua.callFunc "Blocksep"
   bs <- mapM blockToCustom xs
   return $ mconcat $ intersperse blocksep bs
 
 -- | Convert list of Pandoc inline elements to Custom.
-inlineListToCustom :: [Inline] -> Lua String
+inlineListToCustom :: [Inline] -> Lua (Doc Text)
 inlineListToCustom lst = do
   xs <- mapM inlineToCustom lst
   return $ mconcat xs
 
 -- | Convert Pandoc inline element to Custom.
-inlineToCustom :: Inline -> Lua String
+inlineToCustom :: Inline -> Lua (Doc Text)
 
 inlineToCustom (Str str) = Lua.callFunc "Str" str
 

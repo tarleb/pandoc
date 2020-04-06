@@ -11,6 +11,7 @@ Lua marshaling (pushing) and unmarshaling (peeking) instances.
 -}
 module Text.Pandoc.Lua.Marshaling () where
 
+import Foreign.Lua.Module.DocLayout () -- Defines instances for `Doc`
 import Text.Pandoc.Lua.Marshaling.AST ()
 import Text.Pandoc.Lua.Marshaling.CommonState ()
 import Text.Pandoc.Lua.Marshaling.ReaderOptions ()

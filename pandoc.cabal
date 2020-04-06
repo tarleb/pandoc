@@ -319,6 +319,7 @@ extra-source-files:
                  test/writer.xwiki
                  test/writer.muse
                  test/writer.custom
+                 test/writer.custom-doclayout
                  test/writers-lang-and-dir.latex
                  test/writers-lang-and-dir.context
                  test/dokuwiki_inline_formatting.dokuwiki
@@ -360,6 +361,7 @@ extra-source-files:
                  test/odt/native/*.native
                  test/lua/*.lua
                  test/lua/module/*.lua
+                 test/lua/writers/*.lua
 source-repository head
   type:          git
   location:      git://github.com/jgm/pandoc.git
@@ -414,6 +416,7 @@ library
                  vector >= 0.10 && < 0.13,
                  jira-wiki-markup >= 1.3 && < 1.4,
                  hslua >= 1.0.1 && < 1.2,
+                 hslua-module-doclayout >= 0.0 && < 0.2,
                  hslua-module-system >= 0.2 && < 0.3,
                  hslua-module-text >= 0.2 && < 0.3,
                  binary >= 0.5 && < 0.11,
