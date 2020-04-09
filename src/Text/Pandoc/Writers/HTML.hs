@@ -26,6 +26,7 @@ module Text.Pandoc.Writers.HTML (
   writeSlideous,
   writeDZSlides,
   writeRevealJs,
+  layoutHtml5,
   tagWithAttributes
   ) where
 import Control.Monad.State.Strict
@@ -40,7 +41,7 @@ import qualified Data.Text.Lazy as TL
 import Network.HTTP (urlEncode)
 import Network.URI (URI (..), parseURIReference)
 import Numeric (showHex)
-import Text.DocLayout (render, literal)
+import Text.DocLayout (Doc, literal, render)
 import Text.Blaze.Internal (MarkupM (Empty), customLeaf, customParent)
 import Text.DocTemplates (FromContext (lookupContext), Context (..))
 import Text.Blaze.Html hiding (contents)
@@ -196,37 +197,54 @@ writeHtmlSlideShow' variant = writeHtmlString'
                                        NoSlides       -> False
                       }
 
+layoutHtml5 :: PandocMonad m
+            => WriterOptions
+            -> Pandoc
+            -> m (Doc Text, Context Text)
+layoutHtml5 = layoutHtmlString' defaultWriterState{ stHtml5 = True }
+
 renderHtml' :: Html -> Text
 renderHtml' = TL.toStrict . renderHtml
 
 writeHtmlString' :: PandocMonad m
-                 => WriterState -> WriterOptions -> Pandoc -> m Text
+                 => WriterState
+                 -> WriterOptions
+                 -> Pandoc
+                 -> m Text
 writeHtmlString' st opts d = do
+  -- can't use @T.P.Writers.Shared.toTextWriter@ because we want to check
+  -- certain vars.
+  (body, ctx) <- layoutHtmlString' st opts d
+  let context = defField "body" body $ addVariablesToContext opts ctx
+  case writerTemplate opts of
+    Nothing  -> return $ render Nothing body
+    Just tpl -> do
+      when (isNothing (getField "lang" context :: Maybe Text)) $
+        report NoLangSpecified
+      -- check for empty pagetitle
+      context' <- case getField "pagetitle" context of
+        Just (s :: Text) | not (T.null s) -> return context
+        _ -> do
+            let fallback = T.pack $
+                  case lookupContext "sourcefile" (writerVariables opts) of
+                    Nothing    -> "Untitled"
+                    Just []    -> "Untitled"
+                    Just (x:_) -> takeBaseName $ T.unpack x
+            report $ NoTitleElement fallback
+            return $ resetField "pagetitle" fallback context
+      return . render Nothing $ renderTemplate tpl context'
+
+layoutHtmlString' :: PandocMonad m
+                  => WriterState
+                  -> WriterOptions
+                  -> Pandoc
+                  -> m (Doc Text, Context Text)
+layoutHtmlString' st opts d = do
   (body, context) <- evalStateT (pandocToHtml opts d) st
-  (if writerPreferAscii opts
-      then toEntities
-      else id) <$>
-    case writerTemplate opts of
-       Nothing -> return $ renderHtml' body
-       Just tpl -> do
-         -- warn if empty lang
-         when (isNothing (getField "lang" context :: Maybe Text)) $
-           report NoLangSpecified
-         -- check for empty pagetitle
-         context' <-
-            case getField "pagetitle" context of
-                 Just (s :: Text) | not (T.null s) -> return context
-                 _ -> do
-                   let fallback = T.pack $
-                         case lookupContext "sourcefile"
-                                   (writerVariables opts) of
-                           Nothing    -> "Untitled"
-                           Just []    -> "Untitled"
-                           Just (x:_) -> takeBaseName $ T.unpack x
-                   report $ NoTitleElement fallback
-                   return $ resetField "pagetitle" fallback context
-         return $ render Nothing $ renderTemplate tpl
-             (defField "body" (renderHtml' body) context')
+  let body' = ($ renderHtml' body) $ if writerPreferAscii opts
+                                     then toEntities
+                                     else id
+  return (literal body', context)
 
 writeHtml' :: PandocMonad m => WriterState -> WriterOptions -> Pandoc -> m Html
 writeHtml' st opts d =

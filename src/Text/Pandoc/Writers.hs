@@ -82,11 +82,12 @@ import Data.Aeson
 import qualified Data.ByteString.Lazy as BL
 import Data.Text (Text)
 import qualified Data.Text as T
+import Text.DocTemplates (Context, Doc)
 import Text.Pandoc.Class.PandocMonad (PandocMonad (..))
 import Text.Pandoc.Definition
+import Text.Pandoc.Error
 import Text.Pandoc.Options
 import qualified Text.Pandoc.UTF8 as UTF8
-import Text.Pandoc.Error
 import Text.Pandoc.Writers.AsciiDoc
 import Text.Pandoc.Writers.BibTeX
 import Text.Pandoc.Writers.CommonMark
@@ -125,8 +126,10 @@ import Text.Pandoc.Writers.XWiki
 import Text.Pandoc.Writers.ZimWiki
 import Text.Parsec.Error
 
-data Writer m = TextWriter (WriterOptions -> Pandoc -> m Text)
-              | ByteStringWriter (WriterOptions -> Pandoc -> m BL.ByteString)
+data Writer m
+  = TextWriter (WriterOptions -> Pandoc -> m Text)
+  | DocWriter (WriterOptions -> Pandoc -> m (Doc Text, Context Text))
+  | ByteStringWriter (WriterOptions -> Pandoc -> m BL.ByteString)
 
 -- | Association list of formats and writers.
 writers :: PandocMonad m => [ (Text, Writer m) ]
@@ -179,9 +182,9 @@ writers = [
   ,("zimwiki"      , TextWriter writeZimWiki)
   ,("textile"      , TextWriter writeTextile)
   ,("rtf"          , TextWriter writeRTF)
-  ,("org"          , TextWriter writeOrg)
-  ,("asciidoc"     , TextWriter writeAsciiDoc)
-  ,("asciidoctor"  , TextWriter writeAsciiDoctor)
+  ,("org"          , DocWriter layoutOrg)
+  ,("asciidoc"     , DocWriter layoutAsciiDoc)
+  ,("asciidoctor"  , DocWriter layoutAsciiDoctor)
   ,("haddock"      , TextWriter writeHaddock)
   ,("commonmark"   , TextWriter writeCommonMark)
   ,("commonmark_x" , TextWriter writeCommonMark)

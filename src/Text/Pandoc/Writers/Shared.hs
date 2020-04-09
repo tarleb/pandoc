@@ -35,6 +35,7 @@ module Text.Pandoc.Writers.Shared (
                      , toTableOfContents
                      , endsWithPlain
                      , toLegacyTable
+                     , toTextWriter
                      )
 where
 import Safe (lastMay)
@@ -48,6 +49,7 @@ import Data.Text.Conversions (FromText(..))
 import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Text.Pandoc.Builder as Builder
+import Text.Pandoc.Class.PandocMonad (PandocMonad)
 import Text.Pandoc.Definition
 import Text.Pandoc.Options
 import Text.DocLayout
@@ -56,7 +58,7 @@ import Text.Pandoc.Walk (walk)
 import qualified Text.Pandoc.UTF8 as UTF8
 import Text.Pandoc.XML (escapeStringForXML)
 import Text.DocTemplates (Context(..), Val(..), TemplateTarget,
-                          ToContext(..), FromContext(..))
+                          ToContext(..), FromContext(..), renderTemplate)
 
 -- | Create template Context from a 'Meta' and an association list
 -- of variables, specified at the command line or in the writer.
@@ -504,3 +506,19 @@ toLegacyTable (Caption _ cbody) specs thead tbodies tfoot
 
     getComponents (Cell _ _ (RowSpan h) (ColSpan w) body)
       = (h, w, body)
+
+-- | Convert a DocWriter function into a TextWriter function.
+toTextWriter :: PandocMonad m
+             => (WriterOptions -> Pandoc -> m (Doc T.Text, Context T.Text))
+             ->  WriterOptions -> Pandoc -> m T.Text
+toTextWriter f opts doc =
+  let colwidth = if writerWrapText opts == WrapAuto
+                 then Just (writerColumns opts)
+                 else Nothing
+
+      content (d, ctx) = case writerTemplate opts of
+                           Nothing  -> d
+                           Just tpl -> let ctx' = defField "body" d
+                                                $ addVariablesToContext opts ctx
+                                       in renderTemplate tpl ctx'
+  in render colwidth . content <$> f opts doc

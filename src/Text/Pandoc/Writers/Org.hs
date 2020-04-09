@@ -15,59 +15,63 @@ Conversion of 'Pandoc' documents to Emacs Org-Mode.
 
 Org-Mode:  <http://orgmode.org>
 -}
-module Text.Pandoc.Writers.Org (writeOrg) where
+module Text.Pandoc.Writers.Org
+  ( writeOrg
+  , layoutOrg
+  ) where
 import Control.Monad.State.Strict
 import Data.Char (isAlphaNum)
 import Data.List (intersect, intersperse, partition, transpose)
 import Data.Text (Text)
 import qualified Data.Text as T
+import Text.DocTemplates (Context)
 import Text.Pandoc.Class.PandocMonad (PandocMonad, report)
 import Text.Pandoc.Definition
 import Text.Pandoc.Logging
-import Text.Pandoc.Options
+import Text.Pandoc.Options (WriterOptions (writerWrapText), WrapOption (..))
 import Text.DocLayout
 import Text.Pandoc.Shared
-import Text.Pandoc.Templates (renderTemplate)
 import Text.Pandoc.Writers.Shared
 
 data WriterState =
   WriterState { stNotes   :: [[Block]]
               , stHasMath :: Bool
-              , stOptions :: WriterOptions
+              , stWrapText :: WrapOption
               }
 
 type Org = StateT WriterState
 
 -- | Convert Pandoc to Org.
-writeOrg :: PandocMonad m => WriterOptions -> Pandoc -> m Text
-writeOrg opts document = do
-  let st = WriterState { stNotes = [],
-                         stHasMath = False,
-                         stOptions = opts }
+writeOrg :: PandocMonad m
+         => WriterOptions
+         -> Pandoc
+         -> m Text
+writeOrg = toTextWriter layoutOrg
+
+-- | Convert Pandoc to Org.
+layoutOrg :: PandocMonad m
+          => WriterOptions
+          -> Pandoc
+          -> m (Doc Text, Context Text)
+layoutOrg opts document = do
+  let st = WriterState { stNotes = []
+                       , stHasMath = False
+                       , stWrapText = writerWrapText opts
+                       }
   evalStateT (pandocToOrg document) st
 
 -- | Return Org representation of document.
-pandocToOrg :: PandocMonad m => Pandoc -> Org m Text
+pandocToOrg :: PandocMonad m => Pandoc -> Org m (Doc Text, Context Text)
 pandocToOrg (Pandoc meta blocks) = do
-  opts <- gets stOptions
-  let colwidth = if writerWrapText opts == WrapAuto
-                    then Just $ writerColumns opts
-                    else Nothing
-  metadata <- metaToContext opts
+  metadata <- metaToContext'
                blockListToOrg
                (fmap chomp . inlineListToOrg)
                meta
   body <- blockListToOrg blocks
   notes <- gets (reverse . stNotes) >>= notesToOrg
   hasMath <- gets stHasMath
-  let main = body $+$ notes
-  let context = defField "body" main
-              . defField "math" hasMath
-              $ metadata
-  return $ render colwidth $
-    case writerTemplate opts of
-       Nothing  -> main
-       Just tpl -> renderTemplate tpl context
+
+  return (body $+$ notes, defField "math" hasMath metadata)
 
 -- | Return Org representation of notes.
 notesToOrg :: PandocMonad m => [[Block]] -> Org m (Doc Text)
@@ -406,7 +410,7 @@ inlineToOrg il@(RawInline f str)
 inlineToOrg LineBreak = return (text "\\\\" <> cr)
 inlineToOrg Space = return space
 inlineToOrg SoftBreak = do
-  wrapText <- gets (writerWrapText . stOptions)
+  wrapText <- gets stWrapText
   case wrapText of
        WrapPreserve -> return cr
        WrapAuto     -> return space
