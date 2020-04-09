@@ -21,7 +21,10 @@ DokuWiki:  <https://www.dokuwiki.org/dokuwiki>
     [ ] Remove dud/duplicate code
 -}
 
-module Text.Pandoc.Writers.DokuWiki ( writeDokuWiki ) where
+module Text.Pandoc.Writers.DokuWiki
+  ( writeDokuWiki
+  , layoutDokuWiki
+  ) where
 import Control.Monad (zipWithM)
 import Control.Monad.Reader (ReaderT, asks, local, runReaderT)
 import Control.Monad.State.Strict (StateT, evalStateT)
@@ -29,18 +32,19 @@ import Data.Default (Default (..))
 import Data.List (transpose)
 import Data.Text (Text)
 import qualified Data.Text as T
+import Text.DocTemplates (Context, Doc)
 import Text.Pandoc.Class.PandocMonad (PandocMonad, report)
 import Text.Pandoc.Definition
 import Text.Pandoc.ImageSize
 import Text.Pandoc.Logging
-import Text.Pandoc.Options (WrapOption (..), WriterOptions (writerTableOfContents, writerTemplate, writerWrapText))
+import Text.Pandoc.Options (WrapOption (..), WriterOptions (writerTableOfContents, writerWrapText))
 import Text.Pandoc.Shared (camelCaseToHyphenated, escapeURI, isURI, linesToPara,
                            removeFormatting, trimr, tshow)
-import Text.Pandoc.Templates (renderTemplate)
-import Text.DocLayout (render, literal)
-import Text.Pandoc.Writers.Shared (defField, metaToContext, toLegacyTable)
+import Text.DocLayout (literal)
 import Data.Maybe (fromMaybe)
 import qualified Data.Map as M
+import Text.Pandoc.Writers.Shared (defField, metaToContext', toLegacyTable,
+                                   toTextWriter)
 
 data WriterState = WriterState {
   }
@@ -63,7 +67,14 @@ type DokuWiki m = ReaderT WriterEnvironment (StateT WriterState m)
 
 -- | Convert Pandoc to DokuWiki.
 writeDokuWiki :: PandocMonad m => WriterOptions -> Pandoc -> m Text
-writeDokuWiki opts document =
+writeDokuWiki = toTextWriter layoutDokuWiki
+
+-- | Convert Pandoc to DokuWiki.
+layoutDokuWiki :: PandocMonad m
+               => WriterOptions
+               -> Pandoc
+               -> m (Doc Text, Context Text)
+layoutDokuWiki opts document =
   runDokuWiki (pandocToDokuWiki opts document)
 
 runDokuWiki :: PandocMonad m => DokuWiki m a -> m a
@@ -71,19 +82,17 @@ runDokuWiki = flip evalStateT def . flip runReaderT def
 
 -- | Return DokuWiki representation of document.
 pandocToDokuWiki :: PandocMonad m
-                 => WriterOptions -> Pandoc -> DokuWiki m Text
+                 => WriterOptions
+                 -> Pandoc
+                 -> DokuWiki m (Doc Text, Context Text)
 pandocToDokuWiki opts (Pandoc meta blocks) = do
-  metadata <- metaToContext opts
+  metadata <- metaToContext'
               (fmap (literal . trimr) . blockListToDokuWiki opts)
               (fmap (literal . trimr) . inlineListToDokuWiki opts)
               meta
   body <- blockListToDokuWiki opts blocks
-  let context = defField "body" body
-              $ defField "toc" (writerTableOfContents opts) metadata
-  return $
-    case writerTemplate opts of
-       Nothing  -> body
-       Just tpl -> render Nothing $ renderTemplate tpl context
+  let context = defField "toc" (writerTableOfContents opts) metadata
+  return (literal body, context)
 
 -- | Escape special characters for DokuWiki.
 escapeString :: Text -> Text

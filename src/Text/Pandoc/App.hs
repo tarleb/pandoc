@@ -58,7 +58,7 @@ import Text.Pandoc.SelfContained (makeSelfContained)
 import Text.Pandoc.Shared (eastAsianLineBreakFilter, stripEmptyParagraphs,
          headerShift, isURI, tabFilter, uriPathToPath, filterIpynbOutput,
          defaultUserDataDirs, tshow, findM)
-import Text.Pandoc.Writers.Shared (lookupMetaString)
+import Text.Pandoc.Writers.Shared (toTextWriter, lookupMetaString)
 import Text.Pandoc.Readers.Markdown (yamlToMeta)
 import qualified Text.Pandoc.UTF8 as UTF8
 #ifndef _WINDOWS
@@ -282,10 +282,8 @@ convertWithOpts opts = do
               >=> maybe return extractMedia (optExtractMedia opts)
               )
 
-    case writer of
-      ByteStringWriter f -> f writerOptions doc >>= writeFnBinary outputFile
-      TextWriter f -> case outputPdfProgram outputSettings of
-        Just pdfProg -> do
+    let writeWith f = case outputPdfProgram outputSettings of
+          Just pdfProg -> do
                 res <- makePDF pdfProg (optPdfEngineOpts opts) f
                         writerOptions doc
                 case res of
@@ -293,7 +291,7 @@ convertWithOpts opts = do
                      Left err' -> throwError $ PandocPDFError $
                                      TL.toStrict (TE.decodeUtf8With TE.lenientDecode err')
 
-        Nothing -> do
+          Nothing -> do
                 let ensureNl t
                       | standalone = t
                       | T.null t || T.last t /= '\n' = t <> T.singleton '\n'
@@ -303,6 +301,11 @@ convertWithOpts opts = do
                   if optSelfContained opts && htmlFormat format
                      then makeSelfContained output
                      else return output
+
+    case writer of
+      ByteStringWriter f -> f writerOptions doc >>= writeFnBinary outputFile
+      TextWriter f -> writeWith f
+      DocWriter f -> writeWith (toTextWriter f)
 
 type Transform = Pandoc -> Pandoc
 

@@ -18,7 +18,12 @@ that it has omitted the construct.
 
 AsciiDoc:  <http://www.methods.co.nz/asciidoc/>
 -}
-module Text.Pandoc.Writers.AsciiDoc (writeAsciiDoc, writeAsciiDoctor) where
+module Text.Pandoc.Writers.AsciiDoc
+  ( writeAsciiDoc
+  , writeAsciiDoctor
+  , layoutAsciiDoc
+  , layoutAsciiDoctor
+  ) where
 import Control.Monad.State.Strict
 import Data.Char (isPunctuation, isSpace)
 import Data.List (intercalate, intersperse)
@@ -33,8 +38,8 @@ import Text.Pandoc.Logging
 import Text.Pandoc.Options
 import Text.Pandoc.Parsing hiding (blankline, space)
 import Text.DocLayout
+import Text.DocTemplates (Context)
 import Text.Pandoc.Shared
-import Text.Pandoc.Templates (renderTemplate)
 import Text.Pandoc.Writers.Shared
 
 
@@ -66,41 +71,46 @@ defaultWriterState = WriterState { defListMarker      = "::"
 
 -- | Convert Pandoc to AsciiDoc.
 writeAsciiDoc :: PandocMonad m => WriterOptions -> Pandoc -> m Text
-writeAsciiDoc opts document =
+writeAsciiDoc = toTextWriter layoutAsciiDoc
+
+layoutAsciiDoc :: PandocMonad m
+               => WriterOptions -> Pandoc
+               -> m (Doc Text, Context Text)
+layoutAsciiDoc opts document =
   evalStateT (pandocToAsciiDoc opts document) defaultWriterState
 
 -- | Convert Pandoc to AsciiDoctor compatible AsciiDoc.
 writeAsciiDoctor :: PandocMonad m => WriterOptions -> Pandoc -> m Text
-writeAsciiDoctor opts document =
+writeAsciiDoctor = toTextWriter layoutAsciiDoctor
+
+layoutAsciiDoctor :: PandocMonad m
+               => WriterOptions -> Pandoc
+               -> m (Doc Text, Context Text)
+layoutAsciiDoctor opts document =
   evalStateT (pandocToAsciiDoc opts document)
-    defaultWriterState{ asciidoctorVariant = True }
+             defaultWriterState{ asciidoctorVariant = True }
 
 type ADW = StateT WriterState
 
 -- | Return asciidoc representation of document.
-pandocToAsciiDoc :: PandocMonad m => WriterOptions -> Pandoc -> ADW m Text
+pandocToAsciiDoc :: PandocMonad m
+                 => WriterOptions -> Pandoc
+                 -> ADW m (Doc Text, Context Text)
 pandocToAsciiDoc opts (Pandoc meta blocks) = do
   let titleblock = not $ null (docTitle meta) && null (docAuthors meta) &&
                          null (docDate meta)
-  let colwidth = if writerWrapText opts == WrapAuto
-                    then Just $ writerColumns opts
-                    else Nothing
-  metadata <- metaToContext opts
+  metadata <- metaToContext'
               (blockListToAsciiDoc opts)
               (fmap chomp . inlineListToAsciiDoc opts)
               meta
   main <- blockListToAsciiDoc opts $ makeSections False (Just 1) blocks
   st <- get
-  let context  = defField "body" main
-               $ defField "toc"
+  let context  = defField "toc"
                   (writerTableOfContents opts &&
                    isJust (writerTemplate opts))
                $ defField "math" (hasMath st)
                $ defField "titleblock" titleblock metadata
-  return $ render colwidth $
-    case writerTemplate opts of
-       Nothing  -> main
-       Just tpl -> renderTemplate tpl context
+  return (main, context)
 
 -- | Escape special characters for AsciiDoc.
 escapeString :: Text -> Text
@@ -242,13 +252,13 @@ blockToAsciiDoc opts block@(Table _ blkCapt specs thead tbody tfoot) = do
              $ zipWith colspec aligns widths')
          <> text ","
          <> headerspec <> text "]"
-         
+
   -- construct cells and recurse in case of nested tables
   parentTableLevel <- gets tableNestingLevel
   let currentNestingLevel = parentTableLevel + 1
-  
+
   modify $ \st -> st{ tableNestingLevel = currentNestingLevel }
-  
+
   let separator = text (if parentTableLevel == 0
                           then "|"  -- top level separator
                           else "!") -- nested separator
@@ -277,7 +287,7 @@ blockToAsciiDoc opts block@(Table _ blkCapt specs thead tbody tfoot) = do
   let maxwidth = maximum $ map offset (head':rows')
   let body = if maxwidth > colwidth then vsep rows' else vcat rows'
   let border = separator <> text "==="
-  return $ 
+  return $
     caption'' $$ tablespec $$ border $$ head'' $$ body $$ border $$ blankline
 blockToAsciiDoc opts (BulletList items) = do
   inlist <- gets inList
