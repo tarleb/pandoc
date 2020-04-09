@@ -679,6 +679,7 @@ library
                    Text.Pandoc.Lua.Marshaling.ReaderOptions,
                    Text.Pandoc.Lua.Marshaling.SimpleTable,
                    Text.Pandoc.Lua.Marshaling.Version,
+                   Text.Pandoc.Lua.Marshaling.WriterOptions,
                    Text.Pandoc.Lua.Module.MediaBag,
                    Text.Pandoc.Lua.Module.Pandoc,
                    Text.Pandoc.Lua.Module.System,
