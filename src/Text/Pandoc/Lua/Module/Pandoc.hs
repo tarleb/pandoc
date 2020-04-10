@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {- |
    Module      : Text.Pandoc.Lua.Module.Pandoc
@@ -19,18 +20,23 @@ import Control.Monad (when)
 import Control.Monad.Except (throwError)
 import Data.Default (Default (..))
 import Data.Maybe (fromMaybe)
-import Foreign.Lua (Lua, NumResults, Optional, Peekable, Pushable)
+import Data.Text (Text)
+import Foreign.Lua (Lua, NumResults (..), Optional, Peekable, Pushable)
 import System.Exit (ExitCode (..))
+import Text.DocTemplates (Context, Doc)
 import Text.Pandoc.Class.PandocIO (runIO)
-import Text.Pandoc.Definition (Block, Inline)
+import Text.Pandoc.Definition (Block, Inline, Pandoc)
 import Text.Pandoc.Lua.Filter (walkInlines, walkBlocks, LuaFilter, SingletonsList (..))
 import Text.Pandoc.Lua.Marshaling ()
 import Text.Pandoc.Lua.PandocLua (PandocLua, addFunction, liftPandocLua,
                                   loadDefaultModule)
 import Text.Pandoc.Walk (Walkable)
-import Text.Pandoc.Options (ReaderOptions (readerExtensions))
+import Text.Pandoc.Options (WriterOptions, ReaderOptions (readerExtensions))
 import Text.Pandoc.Process (pipeProcess)
 import Text.Pandoc.Readers (Reader (..), getReader)
+import Text.Pandoc.Writers.HTML (layoutHtml5)
+import Text.Pandoc.Writers.Org (layoutOrg)
+import Text.Pandoc.Writers.AsciiDoc (layoutAsciiDoc, layoutAsciiDoctor)
 
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BSL
@@ -44,6 +50,7 @@ import Text.Pandoc.Error
 pushModule :: PandocLua NumResults
 pushModule = do
   loadDefaultModule "pandoc"
+  addFunction "layout" layout
   addFunction "read" read
   addFunction "pipe" pipe
   addFunction "walk_block" walk_block
@@ -78,6 +85,36 @@ read content formatSpecOrNil = liftPandocLua $ do
     Left  (PandocUnsupportedExtensionError e f) -> Lua.raiseError $
        "Extension " <> e <> " not supported for " <> f
     Left  e      -> Lua.raiseError $ show e
+
+layout :: Pandoc
+       -> Optional Text
+       -- -> Optional WriterOptions
+       -> PandocLua NumResults      -- (Doc, Context)
+-- layout doc fmtOrNil optsOrNil = do
+layout doc fmtOrNil = do
+  let formatSpec = fromMaybe "html" (Lua.fromOptional fmtOrNil)
+  -- let opts = fromMaybe def (Lua.fromOptional optsOrNil)
+  let opts = def
+  writer <- lookupWriter formatSpec
+  case writer of
+    Left err   -> liftPandocLua $ Lua.raiseError err
+    Right f    -> do
+      (doc', ctx) <- f opts doc
+      liftPandocLua $ do
+        Lua.push doc'
+        Lua.push ctx
+        return (NumResults 2)
+
+type DocWriterFn = WriterOptions -> Pandoc -> PandocLua (Doc Text, Context Text)
+
+lookupWriter :: Text
+             -> PandocLua (Either Text DocWriterFn)
+lookupWriter = return . \case
+  "asciidoc"    -> Right layoutAsciiDoc
+  "asciidoctor" -> Right layoutAsciiDoctor
+  "html"        -> Right layoutHtml5
+  "org"         -> Right layoutOrg
+  name          -> Left $ "Unknown or unsupported writer: " <> name
 
 -- | Pipes input through a command.
 pipe :: String           -- ^ path to executable
