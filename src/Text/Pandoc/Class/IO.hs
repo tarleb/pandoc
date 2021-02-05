@@ -31,6 +31,7 @@ module Text.Pandoc.Class.IO
   , readFileLazy
   , readFileStrict
   , extractMedia
+  , writeMedia
  ) where
 
 import Control.Monad.Except (throwError)

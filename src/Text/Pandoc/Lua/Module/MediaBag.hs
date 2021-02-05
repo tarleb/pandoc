@@ -15,8 +15,10 @@ module Text.Pandoc.Lua.Module.MediaBag
 
 import Prelude hiding (lookup)
 import Control.Monad (zipWithM_)
+import Data.Maybe (fromMaybe)
 import Foreign.Lua (Lua, NumResults, Optional)
 import Text.Pandoc.Class.CommonState (CommonState (..))
+import Text.Pandoc.Class.IO (writeMedia)
 import Text.Pandoc.Class.PandocMonad (fetchItem, getMediaBag, modifyCommonState,
                                       setMediaBag)
 import Text.Pandoc.Lua.Marshaling ()
@@ -42,6 +44,7 @@ pushModule = do
   addFunction "lookup" lookup
   addFunction "list" list
   addFunction "fetch" fetch
+  addFunction "write" write
   return 1
 
 -- | Delete a single item from the media bag.
@@ -101,3 +104,15 @@ fetch src = do
   liftPandocLua . Lua.push $ maybe "" T.unpack mimeType
   liftPandocLua $ Lua.push bs
   return 2 -- returns 2 values: contents, mimetype
+
+-- | Writes the contents of the given filepath from the mediabag to a
+-- directory. If no directory is given, the current directory will be
+-- used.
+write :: FilePath            -- ^ file path
+      -> Optional FilePath   -- ^ directory path.
+      -> PandocLua NumResults
+write fp optDir = do
+  mediabag <- getMediaBag
+  let dir = fromMaybe "." $ Lua.fromOptional optDir
+  writeMedia dir mediabag fp
+  return 0
