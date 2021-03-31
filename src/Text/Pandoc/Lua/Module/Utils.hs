@@ -1,5 +1,7 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {- |
    Module      : Text.Pandoc.Lua.Module.Utils
    Copyright   : Copyright © 2017-2021 Albert Krewinkel
@@ -14,83 +16,136 @@ module Text.Pandoc.Lua.Module.Utils
   ( pushModule
   ) where
 
-import Control.Applicative ((<|>))
-import Control.Monad.Catch (try)
+import Control.Monad ((<$!>))
 import Data.Data (showConstr, toConstr)
 import Data.Default (def)
 import Data.Version (Version)
-import Foreign.Lua (Peekable, Lua, NumResults (..))
+import HsLua as Lua hiding (pushModule)
+import HsLua.Class.Peekable (PeekError)
+import HsLua.Marshalling.Peek (toPeeker)
 import Text.Pandoc.Definition
 import Text.Pandoc.Error (PandocError)
 import Text.Pandoc.Lua.Marshaling ()
+import Text.Pandoc.Lua.Marshaling.AST
+  ( peekBlock, peekInline, peekPandoc, pushBlock, pushInline, pushPandoc
+  , peekAttr, peekListAttributes, peekMeta, peekMetaValue)
 import Text.Pandoc.Lua.Marshaling.SimpleTable
   ( SimpleTable (..)
   , pushSimpleTable
   )
-import Text.Pandoc.Lua.PandocLua (PandocLua, addFunction, liftPandocLua)
+import Text.Pandoc.Lua.Marshaling.Version (peekVersionFuzzy, pushVersion)
+import Text.Pandoc.Lua.PandocLua (PandocLua (unPandocLua))
 
 import qualified Data.Digest.Pure.SHA as SHA
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
-import qualified Foreign.Lua as Lua
+import qualified HsLua.Packaging as Lua
 import qualified Text.Pandoc.Builder as B
 import qualified Text.Pandoc.Filter.JSON as JSONFilter
 import qualified Text.Pandoc.Shared as Shared
 import qualified Text.Pandoc.Writers.Shared as Shared
 
 -- | Push the "pandoc.utils" module to the Lua stack.
-pushModule :: PandocLua NumResults
-pushModule = do
-  liftPandocLua Lua.newtable
-  addFunction "blocks_to_inlines" blocksToInlines
-  addFunction "equals" equals
-  addFunction "from_simple_table" from_simple_table
-  addFunction "make_sections" makeSections
-  addFunction "normalize_date" normalizeDate
-  addFunction "run_json_filter" runJSONFilter
-  addFunction "sha1" sha1
-  addFunction "stringify" stringify
-  addFunction "to_roman_numeral" toRomanNumeral
-  addFunction "to_simple_table" to_simple_table
-  addFunction "Version" (return :: Version -> Lua Version)
-  return 1
+pandocUtilsModule :: Module PandocError
+pandocUtilsModule = Module
+  { moduleName = "pandoc.utils"
+  , moduleDescription = "pandoc utility functions"
+  , moduleFields = []
+  , moduleFunctions =
+    [ defun "blocks_to_inlines"
+      ### (\blks mSep -> do
+              let sep = maybe Shared.defaultBlocksSeparator B.fromList mSep
+              return $ B.toList (Shared.blocksToInlinesWithSep sep blks))
+      <#> parameter (peekList peekBlock) "list of blocks"
+            "blocks" ""
+      <#> optionalParameter (peekList peekInline) "list of inlines"
+            "inline" ""
+      =#> functionResult (pushList pushInline) "list of inlines" ""
 
--- | Squashes a list of blocks into inlines.
-blocksToInlines :: [Block] -> Lua.Optional [Inline] -> PandocLua [Inline]
-blocksToInlines blks optSep = liftPandocLua $ do
-  let sep = maybe Shared.defaultBlocksSeparator B.fromList
-            $ Lua.fromOptional optSep
-  return $ B.toList (Shared.blocksToInlinesWithSep sep blks)
+    , defun "equals"
+      ### liftPure2 (==)
+      <#> parameter (toPeeker peekAstElement) "AST element" "elem1" ""
+      <#> parameter (toPeeker peekAstElement) "AST element" "elem2" ""
+      =#> functionResult pushBool "boolean" "true iff elem1 == elem2"
 
--- | Convert list of Pandoc blocks into sections using Divs.
-makeSections :: Bool -> Lua.Optional Int -> [Block] -> Lua [Block]
-makeSections number baselevel =
-  return . Shared.makeSections number (Lua.fromOptional baselevel)
+    , defun "make_sections"
+      ### liftPure3 Shared.makeSections
+      <#> parameter peekBool "boolean" "numbering" "add header numbers"
+      <#> parameter (optional peekIntegral) "integer or nil" "baselevel" ""
+      <#> parameter (peekList peekBlock) "list of blocks"
+            "blocks" "document blocks to process"
+      =#> functionResult (pushList pushBlock) "list of Blocks"
+            "processes blocks"
 
--- | Parse a date and convert (if possible) to "YYYY-MM-DD" format. We
--- limit years to the range 1601-9999 (ISO 8601 accepts greater than
--- or equal to 1583, but MS Word only accepts dates starting 1601).
--- Returns nil instead of a string if the conversion failed.
-normalizeDate :: T.Text -> Lua (Lua.Optional T.Text)
-normalizeDate = return . Lua.Optional . Shared.normalizeDate
+    , defun "normalize_date"
+      ### liftPure Shared.normalizeDate
+      <#> parameter peekText "string" "date" "the date string"
+      =#> functionResult (maybe pushnil pushText) "string or nil"
+            "normalized date, or nil if normalization failed."
+      #? T.unwords
+      [ "Parse a date and convert (if possible) to \"YYYY-MM-DD\" format. We"
+      , "limit years to the range 1601-9999 (ISO 8601 accepts greater than"
+      , "or equal to 1583, but MS Word only accepts dates starting 1601)."
+      , "Returns nil instead of a string if the conversion failed."
+      ]
 
--- | Run a JSON filter on the given document.
-runJSONFilter :: Pandoc
-              -> FilePath
-              -> Lua.Optional [String]
-              -> PandocLua Pandoc
-runJSONFilter doc filterFile optArgs = do
-  args <- case Lua.fromOptional optArgs of
-            Just x -> return x
-            Nothing -> liftPandocLua $ do
-              Lua.getglobal "FORMAT"
-              (:[]) <$> Lua.popValue
-  JSONFilter.apply def args filterFile doc
+    , defun "sha1"
+      ### liftPure (SHA.showDigest . SHA.sha1)
+      <#> parameter (fmap (fmap BSL.fromStrict) . peekByteString) "string"
+            "input" ""
+      =#> functionResult pushString "string" "hexadecimal hash value"
+      #? "Compute the hash of the given string value."
 
--- | Calculate the hash of the given contents.
-sha1 :: BSL.ByteString
-     -> Lua T.Text
-sha1 = return . T.pack . SHA.showDigest . SHA.sha1
+    , defun "Version"
+      ### liftPure (id @Version)
+      <#> parameter peekVersionFuzzy
+            "version string, list of integers, or integer"
+            "v" "version description"
+      =#> functionResult pushVersion "Version" "new Version object"
+      #? "Creates a Version object."
+
+    , defun "run_json_filter"
+      ### (\doc filterPath margs -> do
+              args <- case margs of
+                        Just xs -> return xs
+                        Nothing -> do
+                          Lua.getglobal "FORMAT"
+                          (:[]) <$!> ((peekString top <* pop 1) >>= force)
+              JSONFilter.apply def args filterPath doc
+          )
+      <#> parameter peekPandoc "Pandoc" "doc" "input document"
+      <#> parameter peekString "filepath" "filter_path" "path to filter"
+      <#> optionalParameter (peekList peekString) "list of strings"
+            "args" "arguments to pass to the filter"
+      =#> functionResult pushPandoc "Pandoc" "filtered document"
+
+    , defun "stringify"
+      ### unPandocLua . stringify
+      <#> parameter peekAstElement "AST element" "elem" "some pandoc AST element"
+      =#> functionResult pushText "string" "stringified element"
+
+    , defun "from_simple_table"
+      ### from_simple_table
+      <#> parameter (toPeeker peek) "SimpleTable" "simple_tbl" ""
+      =?> "Simple table"
+
+    , defun "to_roman_numeral"
+      ### liftPure Shared.toRomanNumeral
+      <#> parameter (peekIntegral @Int) "integer" "n" "number smaller than 4000"
+      =#> functionResult pushText "string" "roman numeral"
+      #? "Converts a number < 4000 to uppercase roman numeral."
+
+    , defun "to_simple_table"
+      ### to_simple_table
+      <#> parameter peekBlock "Block" "tbl" "a table"
+      =#> functionResult pushSimpleTable "SimpleTable" "SimpleTable object"
+      #? "Converts a table into an old/simple table."
+    ]
+  }
+
+pushModule :: LuaE PandocError NumResults
+pushModule = 1 <$ Lua.pushModule pandocUtilsModule
+
 
 -- | Convert pandoc structure to a string with formatting removed.
 -- Footnotes are skipped (since we don't want their contents in link
@@ -111,9 +166,6 @@ stringifyMetaValue mv = case mv of
   MetaString s -> s
   _            -> Shared.stringify mv
 
-equals :: AstElement -> AstElement -> PandocLua Bool
-equals e1 e2 = return (e1 == e2)
-
 data AstElement
   = PandocElement Pandoc
   | MetaElement Meta
@@ -125,22 +177,19 @@ data AstElement
   | CitationElement Citation
   deriving (Eq, Show)
 
-instance Peekable AstElement where
-  peek idx  = do
-    res <- try $  (PandocElement <$> Lua.peek idx)
-              <|> (InlineElement <$> Lua.peek idx)
-              <|> (BlockElement <$> Lua.peek idx)
-              <|> (AttrElement <$> Lua.peek idx)
-              <|> (ListAttributesElement <$> Lua.peek idx)
-              <|> (MetaElement <$> Lua.peek idx)
-              <|> (MetaValueElement <$> Lua.peek idx)
-    case res of
-      Right x -> return x
-      Left (_ :: PandocError) -> Lua.throwMessage
-        "Expected an AST element, but could not parse value as such."
+peekAstElement :: PeekError e => Peeker e AstElement
+peekAstElement = retrieving "pandoc AST element" . choice
+  [ (fmap (fmap PandocElement) . peekPandoc)
+  , (fmap (fmap InlineElement) . peekInline)
+  , (fmap (fmap BlockElement) . peekBlock)
+  , (fmap (fmap AttrElement) . peekAttr)
+  , (fmap (fmap ListAttributesElement) . peekListAttributes)
+  , (fmap (fmap MetaElement) . peekMeta)
+  , (fmap (fmap MetaValueElement) . peekMetaValue)
+  ]
 
 -- | Converts an old/simple table into a normal table block element.
-from_simple_table :: SimpleTable -> Lua NumResults
+from_simple_table :: SimpleTable -> LuaE PandocError NumResults
 from_simple_table (SimpleTable capt aligns widths head' body) = do
   Lua.push $ Table
     nullAttr
@@ -159,17 +208,12 @@ from_simple_table (SimpleTable capt aligns widths head' body) = do
     toColWidth w = ColWidth w
 
 -- | Converts a table into an old/simple table.
-to_simple_table :: Block -> Lua NumResults
+to_simple_table :: Block -> LuaE PandocError SimpleTable
 to_simple_table = \case
   Table _attr caption specs thead tbodies tfoot -> do
     let (capt, aligns, widths, headers, rows) =
           Shared.toLegacyTable caption specs thead tbodies tfoot
-    pushSimpleTable $ SimpleTable capt aligns widths headers rows
-    return (NumResults 1)
+    return $ SimpleTable capt aligns widths headers rows
   blk ->
-    Lua.throwMessage $
+    Lua.failLua $
       "Expected Table, got " <> showConstr (toConstr blk) <> "."
-
--- | Convert a number < 4000 to uppercase roman numeral.
-toRomanNumeral :: Lua.Integer -> PandocLua T.Text
-toRomanNumeral = return . Shared.toRomanNumeral . fromIntegral

@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {- |
    Module      : Text.Pandoc.Lua
    Copyright   : Copyright © 2017-2021 Albert Krewinkel
@@ -14,23 +15,21 @@ module Text.Pandoc.Lua.Init
 
 import Control.Monad (when)
 import Control.Monad.Catch (try)
-import Control.Monad.Trans (MonadIO (..))
 import Data.Data (Data, dataTypeConstrs, dataTypeOf, showConstr)
-import Foreign.Lua (Lua)
+import HsLua as Lua hiding (status, try)
 import GHC.IO.Encoding (getForeignEncoding, setForeignEncoding, utf8)
 import Text.Pandoc.Class.PandocMonad (readDataFile)
 import Text.Pandoc.Class.PandocIO (PandocIO)
 import Text.Pandoc.Error (PandocError)
 import Text.Pandoc.Lua.Packages (installPandocPackageSearcher)
 import Text.Pandoc.Lua.PandocLua (PandocLua, liftPandocLua, runPandocLua)
-import Text.Pandoc.Lua.Util (throwTopMessageAsError')
-import qualified Foreign.Lua as Lua
+import Text.Pandoc.Lua.Util (throwErrorAsExceptionAsError')
 import qualified Text.Pandoc.Definition as Pandoc
 import qualified Text.Pandoc.Lua.Module.Pandoc as ModulePandoc
 
 -- | Run the lua interpreter, using pandoc's default way of environment
 -- initialization.
-runLua :: Lua a -> PandocIO (Either PandocError a)
+runLua :: LuaE PandocError a -> PandocIO (Either PandocError a)
 runLua luaOp = do
   enc <- liftIO $ getForeignEncoding <* setForeignEncoding utf8
   res <- runPandocLua . try $ do
@@ -53,9 +52,9 @@ initLuaState = do
     ModulePandoc.pushModule
     -- register as loaded module
     liftPandocLua $ do
-      Lua.pushvalue Lua.stackTop
-      Lua.getfield Lua.registryindex Lua.loadedTableRegistryField
-      Lua.setfield (Lua.nthFromTop 2) "pandoc"
+      Lua.pushvalue Lua.top
+      Lua.getfield Lua.registryindex Lua.loaded
+      Lua.setfield (Lua.nth 2) "pandoc"
       Lua.pop 1
     -- copy constructors into registry
     putConstructorsInRegistry
@@ -67,7 +66,7 @@ initLuaState = do
     script <- readDataFile scriptFile
     status <- liftPandocLua $ Lua.dostring script
     when (status /= Lua.OK) . liftPandocLua $
-      throwTopMessageAsError'
+      throwErrorAsExceptionAsError'
       (("Couldn't load '" ++ scriptFile ++ "'.\n") ++)
 
 
@@ -92,12 +91,12 @@ putConstructorsInRegistry = liftPandocLua $ do
   putInReg "List"  -- pandoc.List
   putInReg "SimpleTable"  -- helper for backward-compatible table handling
  where
-  constrsToReg :: Data a => a -> Lua ()
+  constrsToReg :: Data a => a -> LuaE PandocError ()
   constrsToReg = mapM_ (putInReg . showConstr) . dataTypeConstrs . dataTypeOf
 
-  putInReg :: String -> Lua ()
+  putInReg :: String -> LuaE PandocError ()
   putInReg name = do
     Lua.push ("pandoc." ++ name) -- name in registry
     Lua.push name -- in pandoc module
-    Lua.rawget (Lua.nthFromTop 3)
+    Lua.rawget (Lua.nth 3)
     Lua.rawset Lua.registryindex

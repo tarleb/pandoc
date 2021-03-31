@@ -14,7 +14,8 @@ into HsLua.
 -}
 module Text.Pandoc.Lua.Marshaling.AnyValue (AnyValue (..)) where
 
-import Foreign.Lua (Peekable (peek), StackIndex)
+import HsLua.Core (StackIndex)
+import HsLua.Class.Peekable (Peekable (peek))
 
 -- | Dummy type to allow values of arbitrary Lua type. This just wraps
 -- stack indices, using it requires extra care.

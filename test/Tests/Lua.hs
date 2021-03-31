@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {- |
    Module      : Tests.Lua
    Copyright   : © 2017-2021 Albert Krewinkel
@@ -34,7 +35,7 @@ import Text.Pandoc.Options (def)
 import Text.Pandoc.Shared (pandocVersion)
 
 import qualified Control.Monad.Catch as Catch
-import qualified Foreign.Lua as Lua
+import qualified HsLua as Lua
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 
@@ -163,12 +164,12 @@ tests = map (localOption (QuickCheckTests 20))
       Lua.getglobal "PANDOC_VERSION"
       Lua.liftIO .
         assertEqual "pandoc version is wrong" (TE.encodeUtf8 pandocVersion)
-        =<< Lua.tostring' Lua.stackTop
+        =<< Lua.tostring' Lua.top
 
   , testCase "Pandoc types version is set" . runLuaTest $ do
       Lua.getglobal "PANDOC_API_VERSION"
       Lua.liftIO . assertEqual "pandoc-types version is wrong" pandocTypesVersion
-        =<< Lua.peek Lua.stackTop
+        =<< Lua.peek Lua.top
 
   , testCase "require file" $
     assertFilterConversion "requiring file failed"
@@ -178,37 +179,38 @@ tests = map (localOption (QuickCheckTests 20))
 
   , testCase "Allow singleton inline in constructors" . runLuaTest $ do
       Lua.liftIO . assertEqual "Not the expected Emph" (Emph [Str "test"])
-        =<< Lua.callFunc "pandoc.Emph" (Str "test")
+        =<< Lua.invoke @PandocError "pandoc.Emph" (Str "test")
       Lua.liftIO . assertEqual "Unexpected element" (Para [Str "test"])
-        =<< Lua.callFunc "pandoc.Para" ("test" :: String)
+        =<< Lua.invoke @PandocError "pandoc.Para" ("test" :: String)
       Lua.liftIO . assertEqual "Unexptected element"
         (BlockQuote [Para [Str "foo"]]) =<< (
         do
           Lua.getglobal' "pandoc.BlockQuote"
           Lua.push (Para [Str "foo"])
           _ <- Lua.call 1 1
-          Lua.peek Lua.stackTop
+          Lua.peek Lua.top
         )
 
   , testCase "Elements with Attr have `attr` accessor" . runLuaTest $ do
       Lua.push (Div ("hi", ["moin"], [])
                 [Para [Str "ignored"]])
-      Lua.getfield Lua.stackTop "attr"
+      Lua.getfield Lua.top "attr"
       Lua.liftIO . assertEqual "no accessor" (("hi", ["moin"], []) :: Attr)
-        =<< Lua.peek Lua.stackTop
+        =<< Lua.peek Lua.top
 
   , testCase "module `pandoc.system` is present" . runLuaTest $ do
       Lua.getglobal' "pandoc.system"
-      ty <- Lua.ltype Lua.stackTop
+      ty <- Lua.ltype Lua.top
       Lua.liftIO $ assertEqual "module should be a table" Lua.TypeTable ty
 
   , testCase "informative error messages" . runLuaTest $ do
       Lua.pushboolean True
-      eitherPandoc <- Catch.try (Lua.peek Lua.stackTop :: Lua.Lua Pandoc)
+      -- Lua.newtable
+      eitherPandoc <- Catch.try (Lua.peek Lua.top :: Lua.LuaE PandocError Pandoc)
       case eitherPandoc of
         Left (PandocLuaError msg) -> do
-          let expectedMsg = "Could not get Pandoc value: "
-                            <> "table expected, got boolean"
+          let expectedMsg = "expected table, got 'true' (boolean)\n"
+                <> "\twhile retrieving Pandoc value"
           Lua.liftIO $ assertEqual "unexpected error message" expectedMsg msg
         Left e -> error ("Expected a Lua error, but got " <> show e)
         Right _ -> error "Getting a Pandoc element from a bool should fail."
@@ -233,7 +235,7 @@ roundtripEqual x = (x ==) <$> roundtripped
       error ("not exactly one additional element on the stack: " ++ show size)
     Lua.peek (-1)
 
-runLuaTest :: Lua.Lua a -> IO a
+runLuaTest :: Lua.LuaE PandocError a -> IO a
 runLuaTest op = runIOorExplode $ do
   setUserDataDir (Just "../data")
   res <- runLua op

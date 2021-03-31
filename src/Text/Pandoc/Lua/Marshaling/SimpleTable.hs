@@ -1,3 +1,6 @@
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
 {- |
    Module      : Text.Pandoc.Lua.Marshaling.SimpleTable
    Copyright   : © 2020-2021 Albert Krewinkel
@@ -16,12 +19,11 @@ module Text.Pandoc.Lua.Marshaling.SimpleTable
   )
   where
 
-import Foreign.Lua (Lua, Peekable, Pushable, StackIndex)
+import HsLua as Lua
+import HsLua.Class.Peekable (PeekError)
 import Text.Pandoc.Definition
 import Text.Pandoc.Lua.Util (defineHowTo, pushViaConstructor, rawField)
 import Text.Pandoc.Lua.Marshaling.AST ()
-
-import qualified Foreign.Lua as Lua
 
 -- | A simple (legacy-style) table.
 data SimpleTable = SimpleTable
@@ -40,8 +42,8 @@ instance Peekable SimpleTable where
 
 -- | Push a simple table to the stack by calling the
 -- @pandoc.SimpleTable@ constructor.
-pushSimpleTable :: SimpleTable -> Lua ()
-pushSimpleTable tbl = pushViaConstructor "SimpleTable"
+pushSimpleTable :: forall e. LuaError e => SimpleTable -> LuaE e ()
+pushSimpleTable tbl = pushViaConstructor @e "SimpleTable"
   (simpleTableCaption tbl)
   (simpleTableAlignments tbl)
   (simpleTableColumnWidths tbl)
@@ -49,8 +51,8 @@ pushSimpleTable tbl = pushViaConstructor "SimpleTable"
   (simpleTableBody tbl)
 
 -- | Retrieve a simple table from the stack.
-peekSimpleTable :: StackIndex -> Lua SimpleTable
-peekSimpleTable idx = defineHowTo "get SimpleTable" $
+peekSimpleTable :: forall e. PeekError e => StackIndex -> LuaE e SimpleTable
+peekSimpleTable idx = defineHowTo @e "get SimpleTable" $
   SimpleTable
     <$> rawField idx "caption"
     <*> rawField idx "aligns"

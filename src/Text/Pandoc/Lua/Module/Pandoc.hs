@@ -19,7 +19,8 @@ import Control.Monad (when)
 import Control.Monad.Except (throwError)
 import Data.Default (Default (..))
 import Data.Maybe (fromMaybe)
-import Foreign.Lua (Lua, NumResults, Optional, Peekable, Pushable)
+import HsLua as Lua hiding (pushModule)
+import HsLua.Class.Peekable (PeekError)
 import System.Exit (ExitCode (..))
 import Text.Pandoc.Class.PandocIO (runIO)
 import Text.Pandoc.Definition (Block, Inline)
@@ -37,7 +38,6 @@ import Text.Pandoc.Readers (Reader (..), getReader)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import qualified Data.Text as T
-import qualified Foreign.Lua as Lua
 import qualified Text.Pandoc.Lua.Util as LuaUtil
 import Text.Pandoc.Error
 
@@ -93,7 +93,9 @@ pipe command args input = liftPandocLua $ do
   (ec, output) <- Lua.liftIO $ pipeProcess Nothing command args input
   case ec of
     ExitSuccess -> 1 <$ Lua.push output
-    ExitFailure n -> Lua.raiseError (PipeError (T.pack command) n output)
+    ExitFailure n -> do
+      pushPipeError (PipeError (T.pack command) n output)
+      Lua.error
 
 data PipeError = PipeError
   { pipeErrorCommand :: T.Text
@@ -101,29 +103,34 @@ data PipeError = PipeError
   , pipeErrorOutput :: BL.ByteString
   }
 
-instance Peekable PipeError where
-  peek idx =
-    PipeError
-    <$> (Lua.getfield idx "command"    *> Lua.peek (-1) <* Lua.pop 1)
-    <*> (Lua.getfield idx "error_code" *> Lua.peek (-1) <* Lua.pop 1)
-    <*> (Lua.getfield idx "output"     *> Lua.peek (-1) <* Lua.pop 1)
+peekPipeError :: PeekError e => StackIndex -> LuaE e PipeError
+peekPipeError idx =
+  PipeError
+  <$> (Lua.getfield idx "command"    *> Lua.peek (-1) <* Lua.pop 1)
+  <*> (Lua.getfield idx "error_code" *> Lua.peek (-1) <* Lua.pop 1)
+  <*> (Lua.getfield idx "output"     *> Lua.peek (-1) <* Lua.pop 1)
 
-instance Pushable PipeError where
-  push pipeErr = do
-    Lua.newtable
-    LuaUtil.addField "command" (pipeErrorCommand pipeErr)
-    LuaUtil.addField "error_code" (pipeErrorCode pipeErr)
-    LuaUtil.addField "output" (pipeErrorOutput pipeErr)
-    pushPipeErrorMetaTable
-    Lua.setmetatable (-2)
-      where
-        pushPipeErrorMetaTable :: Lua ()
-        pushPipeErrorMetaTable = do
-          v <- Lua.newmetatable "pandoc pipe error"
-          when v $ LuaUtil.addFunction "__tostring" pipeErrorMessage
+pushPipeError :: PeekError e => Pusher e PipeError
+pushPipeError pipeErr = do
+  Lua.newtable
+  LuaUtil.addField "command" (pipeErrorCommand pipeErr)
+  LuaUtil.addField "error_code" (pipeErrorCode pipeErr)
+  LuaUtil.addField "output" (pipeErrorOutput pipeErr)
+  pushPipeErrorMetaTable
+  Lua.setmetatable (-2)
+    where
+      pushPipeErrorMetaTable :: PeekError e => LuaE e ()
+      pushPipeErrorMetaTable = do
+        v <- Lua.newmetatable "pandoc pipe error"
+        when v $ do
+          pushName "__tostring"
+          pushHaskellFunction pipeErrorMessage
+          rawset (nth 3)
 
-        pipeErrorMessage :: PipeError -> Lua BL.ByteString
-        pipeErrorMessage (PipeError cmd errorCode output) = return $ mconcat
+      pipeErrorMessage :: PeekError e => LuaE e NumResults
+      pipeErrorMessage = do
+        (PipeError cmd errorCode output) <- peekPipeError (nthBottom 1)
+        pushByteString . BSL.toStrict . BSL.concat $
           [ BSL.pack "Error running "
           , BSL.pack $ T.unpack cmd
           , BSL.pack " (error code "
@@ -131,3 +138,4 @@ instance Pushable PipeError where
           , BSL.pack "): "
           , if output == mempty then BSL.pack "<no output>" else output
           ]
+        return (NumResults 1)

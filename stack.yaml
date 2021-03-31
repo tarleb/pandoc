@@ -8,9 +8,22 @@ packages:
 - '.'
 extra-deps:
 - haddock-library-1.10.0
-- hslua-1.3.0
-- hslua-module-path-0.1.0
 - jira-wiki-markup-1.4.0
+- git: https://github.com/hslua/hslua
+  commit: bb9572f5d8ea8d32f1b5709499e481eb45a45773
+  subdirs:
+    - hslua
+    - hslua-classes
+    - hslua-core
+    - hslua-marshalling
+    - hslua-module-path
+    - hslua-module-system
+    - hslua-module-text
+    - hslua-packaging
+    - lua
+    - lua-arbitrary
+    - tasty-hslua
+    - tasty-lua
 - random-1.2.0
 - unicode-collation-0.1.3
 - citeproc-0.4.0.1

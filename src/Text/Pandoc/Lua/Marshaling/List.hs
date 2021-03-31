@@ -1,7 +1,8 @@
-{-# LANGUAGE DeriveDataTypeable   #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveDataTypeable    #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE UndecidableInstances  #-}
 {- |
 Module      : Text.Pandoc.Lua.Marshaling.List
 Copyright   : © 2012-2021 John MacFarlane
@@ -17,11 +18,11 @@ module Text.Pandoc.Lua.Marshaling.List
   ) where
 
 import Data.Data (Data)
-import Foreign.Lua (Peekable, Pushable)
+import HsLua (Peekable, Pushable (push), pushList)
 import Text.Pandoc.Walk (Walkable (..))
-import Text.Pandoc.Lua.Util (defineHowTo, pushViaConstructor)
+import Text.Pandoc.Lua.Util (defineHowTo, pushViaConstr')
 
-import qualified Foreign.Lua as Lua
+import qualified HsLua as Lua
 
 -- | List wrapper which is marshalled as @pandoc.List@.
 newtype List a = List { fromList :: [a] }
@@ -29,7 +30,7 @@ newtype List a = List { fromList :: [a] }
 
 instance Pushable a => Pushable (List a) where
   push (List xs) =
-    pushViaConstructor "List" xs
+    pushViaConstr' "List" [pushList push xs]
 
 instance Peekable a => Peekable (List a) where
   peek idx = defineHowTo "get List" $ do
