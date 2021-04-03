@@ -134,7 +134,7 @@ instance PandocMonad PandocLua where
 
   getCommonState = PandocLua $ do
     Lua.getglobal "PANDOC_STATE"
-    peekCommonState Lua.top >>= force
+    forcePeek $ peekCommonState Lua.top
   putCommonState = PandocLua . setGlobals . (:[]) . PANDOC_STATE
 
   logOutput = IO.logOutput

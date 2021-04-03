@@ -19,11 +19,11 @@ module Text.Pandoc.Lua.Marshaling.SimpleTable
   )
   where
 
+import Control.Monad ((<$!>))
 import HsLua as Lua
-import HsLua.Class.Peekable (PeekError)
 import Text.Pandoc.Definition
-import Text.Pandoc.Lua.Util (defineHowTo, pushViaConstructor, rawField)
-import Text.Pandoc.Lua.Marshaling.AST ()
+import Text.Pandoc.Lua.Util (pushViaConstructor)
+import Text.Pandoc.Lua.Marshaling.AST
 
 -- | A simple (legacy-style) table.
 data SimpleTable = SimpleTable
@@ -33,12 +33,6 @@ data SimpleTable = SimpleTable
   , simpleTableHeader :: [[Block]]
   , simpleTableBody :: [[[Block]]]
   }
-
-instance Pushable SimpleTable where
-  push = pushSimpleTable
-
-instance Peekable SimpleTable where
-  peek = peekSimpleTable
 
 -- | Push a simple table to the stack by calling the
 -- @pandoc.SimpleTable@ constructor.
@@ -51,11 +45,10 @@ pushSimpleTable tbl = pushViaConstructor @e "SimpleTable"
   (simpleTableBody tbl)
 
 -- | Retrieve a simple table from the stack.
-peekSimpleTable :: forall e. PeekError e => StackIndex -> LuaE e SimpleTable
-peekSimpleTable idx = defineHowTo @e "get SimpleTable" $
-  SimpleTable
-    <$> rawField idx "caption"
-    <*> rawField idx "aligns"
-    <*> rawField idx "widths"
-    <*> rawField idx "headers"
-    <*> rawField idx "rows"
+peekSimpleTable :: forall e. LuaError e => Peeker e SimpleTable
+peekSimpleTable idx = retrieving "SimpleTable" $ SimpleTable
+  <$!> peekFieldRaw peekInlines "caption" idx
+  <*>  peekFieldRaw (peekList peekRead) "aligns" idx
+  <*>  peekFieldRaw (peekList peekRealFloat) "widths" idx
+  <*>  peekFieldRaw (peekList peekBlocks) "headers" idx
+  <*>  peekFieldRaw (peekList (peekList peekBlocks)) "rows" idx

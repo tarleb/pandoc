@@ -49,6 +49,6 @@ cloneWith :: Peeker PandocError a
           -> Pusher PandocError a
           -> LuaE PandocError NumResults
 cloneWith peeker pusher = do
-  x <- peeker (Lua.nthBottom 1) >>= Lua.force
+  x <- Lua.forcePeek $ peeker (Lua.nthBottom 1)
   pusher x
   return (Lua.NumResults 1)

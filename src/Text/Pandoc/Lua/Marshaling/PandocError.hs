@@ -20,7 +20,7 @@ module Text.Pandoc.Lua.Marshaling.PandocError
   where
 
 import HsLua.Core (LuaError)
-import HsLua.Marshalling (Peeker, Pusher, pushString)
+import HsLua.Marshalling (Peeker, Pusher, pushString, liftLua)
 import HsLua.Packaging
 import HsLua.Packaging.Operation
 import HsLua.Packaging.UDType
@@ -45,8 +45,9 @@ pushPandocError = pushUD typePandocError
 
 -- | Retrieve a @'PandocError'@ from the Lua stack.
 peekPandocError :: LuaError e => Peeker e PandocError
-peekPandocError idx = Lua.retrieving "PandocError" $ Lua.ltype idx >>= \case
-  Lua.TypeUserdata -> peekUD typePandocError idx
-  _ -> do
-    msg <- Lua.state >>= \l -> Lua.liftIO (Lua.popErrorMessage l)
-    return . pure $ PandocLuaError (UTF8.toText msg)
+peekPandocError idx = Lua.retrieving "PandocError" $
+  liftLua (Lua.ltype idx) >>= \case
+    Lua.TypeUserdata -> peekUD typePandocError idx
+    _ -> do
+      msg <- liftLua $ Lua.state >>= \l -> Lua.liftIO (Lua.popErrorMessage l)
+      return $ PandocLuaError (UTF8.toText msg)

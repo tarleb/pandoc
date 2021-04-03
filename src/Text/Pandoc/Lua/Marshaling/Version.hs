@@ -20,7 +20,6 @@ module Text.Pandoc.Lua.Marshaling.Version
   )
   where
 
-import Control.Monad ((>=>))
 import Data.Maybe (fromMaybe)
 import Data.Version (Version (..), makeVersion, parseVersion, showVersion)
 import HsLua as Lua
@@ -31,7 +30,7 @@ import Text.ParserCombinators.ReadP (readP_to_S)
 import qualified Text.Pandoc.UTF8 as UTF8
 
 instance Peekable Version where
-  peek = peekVersionFuzzy >=> force
+  peek = forcePeek . peekVersionFuzzy
 
 instance Pushable Version where
   push = pushVersion
@@ -41,24 +40,24 @@ pushVersion :: LuaError e => Pusher e Version
 pushVersion = pushUD typeVersion
 
 peekVersionFuzzy :: LuaError e => Peeker e Version
-peekVersionFuzzy idx = retrieving "Version" $ Lua.ltype idx >>= \case
+peekVersionFuzzy idx = retrieving "Version" $ liftLua (Lua.ltype idx) >>= \case
   Lua.TypeUserdata -> peekVersion idx
   Lua.TypeString -> do
-    versionStr <- peekString idx >>= force
+    versionStr <- peekString idx
     let parses = readP_to_S parseVersion versionStr
     case lastMay parses of
-      Just (v, "") -> return (pure v)
-      _  -> return . Lua.failure $
+      Just (v, "") -> return v
+      _  -> Lua.failPeek $
             UTF8.fromString $ "could not parse as Version: " ++ versionStr
 
   Lua.TypeNumber -> do
-    fmap (makeVersion . (:[])) <$> peekIntegral idx
+    (makeVersion . (:[])) <$> peekIntegral idx
 
   Lua.TypeTable ->
-    fmap makeVersion <$> peekList peekIntegral idx
+    makeVersion <$> peekList peekIntegral idx
 
   _ ->
-    Lua.failLua "could not peek Version"
+    Lua.failPeek "could not peek Version"
 
 peekVersion :: LuaError e => Peeker e Version
 peekVersion = peekUD typeVersion

@@ -14,16 +14,16 @@ module Text.Pandoc.Lua.Init
   ) where
 
 import Control.Monad (when)
-import Control.Monad.Catch (try)
+import Control.Monad.Catch (throwM, try)
 import Data.Data (Data, dataTypeConstrs, dataTypeOf, showConstr)
 import HsLua as Lua hiding (status, try)
 import GHC.IO.Encoding (getForeignEncoding, setForeignEncoding, utf8)
 import Text.Pandoc.Class.PandocMonad (readDataFile)
 import Text.Pandoc.Class.PandocIO (PandocIO)
-import Text.Pandoc.Error (PandocError)
+import Text.Pandoc.Error (PandocError (PandocLuaError))
 import Text.Pandoc.Lua.Packages (installPandocPackageSearcher)
 import Text.Pandoc.Lua.PandocLua (PandocLua, liftPandocLua, runPandocLua)
-import Text.Pandoc.Lua.Util (throwErrorAsExceptionAsError')
+import qualified Data.Text as T
 import qualified Text.Pandoc.Definition as Pandoc
 import qualified Text.Pandoc.Lua.Module.Pandoc as ModulePandoc
 
@@ -65,10 +65,12 @@ initLuaState = do
   loadInitScript scriptFile = do
     script <- readDataFile scriptFile
     status <- liftPandocLua $ Lua.dostring script
-    when (status /= Lua.OK) . liftPandocLua $
-      throwErrorAsExceptionAsError'
-      (("Couldn't load '" ++ scriptFile ++ "'.\n") ++)
-
+    when (status /= Lua.OK) . liftPandocLua $ do
+      err <- popException
+      let prefix = "Couldn't load '" <> T.pack scriptFile <> "':\n"
+      throwM . PandocLuaError . (prefix <>) $ case err of
+        PandocLuaError msg -> msg
+        _                  -> T.pack $ show err
 
 -- | AST elements are marshaled via normal constructor functions in the
 -- @pandoc@ module. However, accessing Lua globals from Haskell is

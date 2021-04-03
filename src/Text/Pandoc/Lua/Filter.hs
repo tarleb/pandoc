@@ -1,8 +1,7 @@
-{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE IncoherentInstances  #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TypeApplications     #-}
 {- |
 Module      : Text.Pandoc.Lua.Filter
 Copyright   : © 2012-2021 John MacFarlane,
@@ -23,21 +22,19 @@ module Text.Pandoc.Lua.Filter ( LuaFilterFunction
                               , module Text.Pandoc.Lua.Walk
                               ) where
 import Control.Applicative ((<|>))
-import Control.Monad (mplus, (>=>))
-import Control.Monad.Catch (finally)
+import Control.Monad (mplus, (>=>), (<$!>))
 import Data.Data (Data, DataType, dataTypeConstrs, dataTypeName, dataTypeOf,
                   showConstr, toConstr, tyconUQname)
 import Data.Foldable (foldrM)
 import Data.List (foldl')
 import Data.Map (Map)
-import Data.Maybe (fromMaybe)
 import Data.String (IsString (fromString))
-import HsLua as Lua hiding (peekList)
-import HsLua.Class.Peekable (PeekError, peekList)
+import HsLua as Lua
 import Text.Pandoc.Definition
 import Text.Pandoc.Error (PandocError)
 import Text.Pandoc.Lua.Marshaling ()
-import Text.Pandoc.Lua.Marshaling.List (List (..))
+import Text.Pandoc.Lua.Marshaling.AST
+import Text.Pandoc.Lua.Marshaling.List (List (..), peekList')
 import Text.Pandoc.Lua.Walk (SingletonsList (..))
 import Text.Pandoc.Walk (Walkable (walkM))
 
@@ -84,7 +81,7 @@ instance Peekable LuaFilter where
           return $ case filterFn of
             Nothing -> acc
             Just fn -> Map.insert constr fn acc
-    LuaFilter <$> foldrM go Map.empty constrs
+    LuaFilter <$!> foldrM go Map.empty constrs
 
 -- | Register the function at the top of the stack as a filter function in the
 -- registry.
@@ -104,45 +101,43 @@ pushFilterFunction (LuaFilterFunction fnRef) =
 -- element instead of a list, fetch that element as a singleton list. If the top
 -- of the stack is nil, return the default element that was passed to this
 -- function. If none of these apply, raise an error.
-elementOrList :: forall a. Peekable a => a -> LuaE PandocError [a]
-elementOrList x = do
-  elementUnchanged <- Lua.isnil top
-  if elementUnchanged
-    then [x] <$ Lua.pop 1
-    else do
-       mbres <- peekEither top
-       case mbres of
-         Right res -> [res] <$ Lua.pop 1
-         Left _    -> peekList top `finally` Lua.pop 1
+elementOrList :: Peeker PandocError a -> a -> LuaE PandocError [a]
+elementOrList p x = forcePeek . (`lastly` Lua.pop 1) $
+  ([x] <$ peekNil top) <|>          -- got nil, i.e., element is unchanged
+  ((:[]) <$!> p top)   <|>          -- single element
+  peekList p top                    -- list of elements
 
--- | Pop and return a value from the stack; if the value at the top of
--- the stack is @nil@, return the fallback element.
-popOption :: Peekable a => a -> LuaE PandocError a
-popOption fallback = fromMaybe fallback . Lua.fromOptional <$> Lua.popValue
+-- | Pops and returns a value from the stack; if the value at the top of
+-- the stack is @nil@, returns the fallback element.
+popOption :: Peeker PandocError a -> a -> LuaE PandocError a
+popOption peeker fallback = forcePeek . (`lastly` pop 1) $
+  (fallback <$ peekNil top) <|> peeker top
 
 -- | Apply filter on a sequence of AST elements. Both lists and single
 -- value are accepted as filter function return values.
-runOnSequence :: (Data a, Peekable a, Pushable a)
-              => LuaFilter -> SingletonsList a
+runOnSequence :: forall a. (Data a, Pushable a)
+              => Peeker PandocError a -> LuaFilter -> SingletonsList a
               -> LuaE PandocError (SingletonsList a)
-runOnSequence (LuaFilter fnMap) (SingletonsList xs) =
+runOnSequence peeker (LuaFilter fnMap) (SingletonsList xs) =
   SingletonsList <$> mconcatMapM tryFilter xs
  where
-  tryFilter :: (Data a, Peekable a, Pushable a) => a -> LuaE PandocError [a]
+  tryFilter :: a -> LuaE PandocError [a]
   tryFilter x =
     let filterFnName = fromString $ showConstr (toConstr x)
         catchAllName = fromString . tyconUQname $ dataTypeName (dataTypeOf x)
     in case Map.lookup filterFnName fnMap <|> Map.lookup catchAllName fnMap of
-         Just fn -> runFilterFunction fn x *> elementOrList x
+         Just fn -> runFilterFunction fn x *> elementOrList peeker x
          Nothing -> return [x]
 
 -- | Try filtering the given value without type error corrections on
 -- the return value.
-runOnValue :: (Data a, Peekable a, Pushable a)
-           => Name -> LuaFilter -> a -> LuaE PandocError a
-runOnValue filterFnName (LuaFilter fnMap) x =
+runOnValue :: (Data a, Pushable a)
+           => Name -> Peeker PandocError a
+           -> LuaFilter -> a
+           -> LuaE PandocError a
+runOnValue filterFnName peeker (LuaFilter fnMap) x =
   case Map.lookup filterFnName fnMap of
-    Just fn -> runFilterFunction fn x *> popOption x
+    Just fn -> runFilterFunction fn x *> popOption peeker x
     Nothing -> return x
 
 -- | Push a value to the stack via a Lua filter function. The filter
@@ -178,7 +173,7 @@ walkInlines :: Walkable (SingletonsList Inline) a
             => LuaFilter -> a -> LuaE PandocError a
 walkInlines lf =
   let f :: SingletonsList Inline -> LuaE PandocError (SingletonsList Inline)
-      f = runOnSequence lf
+      f = runOnSequence peekInline lf
   in if lf `hasOneOf` inlineElementNames
      then walkM f
      else return
@@ -187,7 +182,7 @@ walkInlineLists :: Walkable (List Inline) a
                 => LuaFilter -> a -> LuaE PandocError a
 walkInlineLists lf =
   let f :: List Inline -> LuaE PandocError (List Inline)
-      f = runOnValue listOfInlinesFilterName lf
+      f = runOnValue listOfInlinesFilterName (peekList' peekInline) lf
   in if lf `contains` listOfInlinesFilterName
      then walkM f
      else return
@@ -196,7 +191,7 @@ walkBlocks :: Walkable (SingletonsList Block) a
            => LuaFilter -> a -> LuaE PandocError a
 walkBlocks lf =
   let f :: SingletonsList Block -> LuaE PandocError (SingletonsList Block)
-      f = runOnSequence lf
+      f = runOnSequence peekBlock lf
   in if lf `hasOneOf` blockElementNames
      then walkM f
      else return
@@ -205,20 +200,20 @@ walkBlockLists :: Walkable (List Block) a
                => LuaFilter -> a -> LuaE PandocError a
 walkBlockLists lf =
   let f :: List Block -> LuaE PandocError (List Block)
-      f = runOnValue listOfBlocksFilterName lf
+      f = runOnValue listOfBlocksFilterName (peekList' peekBlock) lf
   in if lf `contains` listOfBlocksFilterName
      then walkM f
      else return
 
 walkMeta :: LuaFilter -> Pandoc -> LuaE PandocError Pandoc
 walkMeta lf (Pandoc m bs) = do
-  m' <- runOnValue "Meta" lf m
+  m' <- runOnValue "Meta" peekMeta lf m
   return $ Pandoc m' bs
 
 walkPandoc :: LuaFilter -> Pandoc -> LuaE PandocError Pandoc
 walkPandoc (LuaFilter fnMap) =
   case foldl' mplus Nothing (map (`Map.lookup` fnMap) pandocFilterNames) of
-    Just fn -> \x -> runFilterFunction fn x *> singleElement x
+    Just fn -> \x -> runFilterFunction fn x *> singleElement peekPandoc x
     Nothing -> return
 
 constructorsFor :: DataType -> [Name]
@@ -242,15 +237,15 @@ metaFilterName = "Meta"
 pandocFilterNames :: [Name]
 pandocFilterNames = ["Pandoc", "Doc"]
 
-singleElement :: forall a e. (PeekError e, Peekable a) => a -> LuaE e a
-singleElement x = do
+singleElement :: forall a e. (LuaError e) => Peeker e a -> a -> LuaE e a
+singleElement p x = do
   elementUnchanged <- Lua.isnil (-1)
   if elementUnchanged
     then x <$ Lua.pop 1
     else do
-    mbres <- peekEither @e top
-    case mbres of
-      Right res -> res <$ Lua.pop 1
+    res <- runPeek $ p top
+    case resultToEither res of
+      Right res' -> res' <$ Lua.pop 1
       Left err  -> do
         Lua.pop 1
         Lua.failLua

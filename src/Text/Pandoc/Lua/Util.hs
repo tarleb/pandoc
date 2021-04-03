@@ -1,6 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes   #-}
 {-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -18,13 +17,9 @@ Lua utility functions.
 -}
 module Text.Pandoc.Lua.Util
   ( getTag
-  , rawField
   , addField
   , addFunction
-  , addValue
   , pushViaConstructor
-  , defineHowTo
-  , throwErrorAsExceptionAsError'
   , callWithTraceback
   , dofileWithTraceback
   , pushViaConstr'
@@ -32,25 +27,11 @@ module Text.Pandoc.Lua.Util
 
 import Control.Monad (unless, when)
 import HsLua
-import HsLua.Class.Peekable (PeekError (..))
-import qualified Text.Pandoc.UTF8 as UTF8
 import qualified HsLua as Lua
-
--- | Get value behind key from table at given index.
-rawField :: (PeekError e, Peekable a) => StackIndex -> String -> LuaE e a
-rawField idx key = do
-  absidx <- Lua.absindex idx
-  Lua.push key
-  Lua.rawget absidx
-  Lua.popValue
 
 -- | Add a value to the table at the top of the stack at a string-index.
 addField :: (LuaError e, Pushable a) => String -> a -> LuaE e ()
-addField = addValue
-
--- | Add a key-value pair to the table at the top of the stack.
-addValue :: (LuaError e, Pushable a, Pushable b) => a -> b -> LuaE e ()
-addValue key value = do
+addField key value = do
   Lua.push key
   Lua.push value
   Lua.rawset (Lua.nth 3)
@@ -94,15 +75,14 @@ pushViaConstructor pandocFn = pushViaCall @e ("pandoc." <> pandocFn)
 -- @Lua.getfield idx "tag"@. It only checks for the field on the table at index
 -- @idx@ and on its metatable, also ignoring any @__index@ value on the
 -- metatable.
-getTag :: LuaError e => StackIndex -> LuaE e String
+getTag :: LuaError e => Peeker e Name
 getTag idx = do
   -- push metatable or just the table
-  Lua.getmetatable idx >>= \hasMT -> unless hasMT (Lua.pushvalue idx)
-  Lua.pushName "tag"
-  Lua.rawget (Lua.nth 2)
-  Lua.tostring Lua.top <* Lua.pop 2 >>= \case
-    Nothing -> Lua.failLua "untagged value"
-    Just x -> return (UTF8.toString x)
+  liftLua $ do
+    Lua.getmetatable idx >>= \hasMT -> unless hasMT (Lua.pushvalue idx)
+    Lua.pushName "tag"
+    Lua.rawget (Lua.nth 2)
+  Lua.peekName Lua.top `lastly` Lua.pop 2  -- table/metatable and `tag` field
 
 pushViaConstr' :: forall e. LuaError e => Name -> [LuaE e ()] -> LuaE e ()
 pushViaConstr' fnname pushArgs = do
@@ -110,18 +90,6 @@ pushViaConstr' fnname pushArgs = do
   rawget @e registryindex
   sequence_ pushArgs
   call @e (fromIntegral (length pushArgs)) 1
-
--- | Modify the message at the top of the stack before throwing it as an
--- Exception.
-throwErrorAsExceptionAsError' :: LuaError e => (String -> String) -> LuaE e a
-throwErrorAsExceptionAsError' modifier = do
-  msg <- Lua.tostring' Lua.top
-  Lua.pop 2 -- remove error and error string pushed by tostring'
-  Lua.failLua (modifier (UTF8.toString msg))
-
--- | Mark the context of a Lua computation for better error reporting.
-defineHowTo :: forall e a. PeekError e => String -> LuaE e a -> LuaE e a
-defineHowTo = inContext @e
 
 -- | Like @'Lua.pcall'@, but uses a predefined error handler which adds a
 -- traceback on error.

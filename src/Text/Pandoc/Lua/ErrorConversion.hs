@@ -16,7 +16,7 @@ module Text.Pandoc.Lua.ErrorConversion
   ) where
 
 import HsLua (LuaError, LuaE, top)
-import HsLua.Marshalling (resultToEither)
+import HsLua.Marshalling (resultToEither, runPeek)
 import HsLua.Class.Peekable (PeekError (..))
 import Text.Pandoc.Error (PandocError (PandocLuaError))
 import Text.Pandoc.Lua.Marshaling.PandocError (pushPandocError, peekPandocError)
@@ -30,7 +30,7 @@ addContextToException = undefined
 -- | Retrieve a @'PandocError'@ from the Lua stack.
 popPandocError :: LuaE PandocError PandocError
 popPandocError = do
-  errResult <- peekPandocError top
+  errResult <- runPeek $ peekPandocError top
   case resultToEither errResult of
     Right x -> return x
     Left err -> return $ PandocLuaError (T.pack err)

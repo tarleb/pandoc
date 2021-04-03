@@ -1,6 +1,5 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 {- |
    Module      : Tests.Lua
    Copyright   : © 2017-2021 Albert Krewinkel
@@ -15,6 +14,7 @@ Unit and integration tests for pandoc's Lua subsystem.
 module Tests.Lua ( runLuaTest, tests ) where
 
 import Control.Monad (when)
+import HsLua as Lua hiding (error)
 import System.FilePath ((</>))
 import Test.Tasty (TestTree, localOption)
 import Test.Tasty.HUnit (Assertion, assertEqual, testCase)
@@ -27,31 +27,31 @@ import Text.Pandoc.Builder (bulletList, definitionList, displayMath, divWith,
                             HasMeta (setMeta))
 import Text.Pandoc.Class (runIOorExplode, setUserDataDir)
 import Text.Pandoc.Definition (Block (BlockQuote, Div, Para), Inline (Emph, Str),
-                               Attr, Meta, Pandoc, pandocTypesVersion)
+                               Attr, Pandoc, pandocTypesVersion)
 import Text.Pandoc.Error (PandocError (PandocLuaError))
 import Text.Pandoc.Filter (Filter (LuaFilter), applyFilters)
 import Text.Pandoc.Lua (runLua)
+import Text.Pandoc.Lua.Marshaling.AST
 import Text.Pandoc.Options (def)
 import Text.Pandoc.Shared (pandocVersion)
 
 import qualified Control.Monad.Catch as Catch
-import qualified HsLua as Lua
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 
 tests :: [TestTree]
 tests = map (localOption (QuickCheckTests 20))
   [ testProperty "inline elements can be round-tripped through the lua stack" $
-    \x -> ioProperty (roundtripEqual (x::Inline))
+    ioProperty . roundtripEqual peekInline
 
   , testProperty "block elements can be round-tripped through the lua stack" $
-    \x -> ioProperty (roundtripEqual (x::Block))
+    ioProperty . roundtripEqual peekBlock
 
   , testProperty "meta blocks can be round-tripped through the lua stack" $
-    \x -> ioProperty (roundtripEqual (x::Meta))
+    ioProperty . roundtripEqual peekMeta
 
   , testProperty "documents can be round-tripped through the lua stack" $
-    \x -> ioProperty (roundtripEqual (x::Pandoc))
+    ioProperty . roundtripEqual peekPandoc
 
   , testCase "macro expansion via filter" $
     assertFilterConversion "a '{{helloworld}}' string is expanded"
@@ -178,17 +178,25 @@ tests = map (localOption (QuickCheckTests 20))
       (doc $ para (str . T.pack $ "lua" </> "require-file.lua"))
 
   , testCase "Allow singleton inline in constructors" . runLuaTest $ do
-      Lua.liftIO . assertEqual "Not the expected Emph" (Emph [Str "test"])
-        =<< Lua.invoke @PandocError "pandoc.Emph" (Str "test")
-      Lua.liftIO . assertEqual "Unexpected element" (Para [Str "test"])
-        =<< Lua.invoke @PandocError "pandoc.Para" ("test" :: String)
+      Lua.liftIO . assertEqual "Not the expected Emph"
+        (Emph [Str "test"]) =<< do
+        Lua.OK <- Lua.dostring "return pandoc.Emph"
+        pushInline (Str "test")
+        Lua.call 1 1
+        forcePeek $ peekInline top
+      Lua.liftIO . assertEqual "Unexpected element"
+        (Para [Str "test"]) =<< do
+        Lua.getglobal' "pandoc.Para"
+        Lua.pushString "test"
+        Lua.call 1 1
+        forcePeek $ peekBlock top
       Lua.liftIO . assertEqual "Unexptected element"
         (BlockQuote [Para [Str "foo"]]) =<< (
         do
           Lua.getglobal' "pandoc.BlockQuote"
           Lua.push (Para [Str "foo"])
           _ <- Lua.call 1 1
-          Lua.peek Lua.top
+          forcePeek $ peekBlock Lua.top
         )
 
   , testCase "Elements with Attr have `attr` accessor" . runLuaTest $ do
@@ -206,7 +214,7 @@ tests = map (localOption (QuickCheckTests 20))
   , testCase "informative error messages" . runLuaTest $ do
       Lua.pushboolean True
       -- Lua.newtable
-      eitherPandoc <- Catch.try (Lua.peek Lua.top :: Lua.LuaE PandocError Pandoc)
+      eitherPandoc <- Catch.try (forcePeek $ peekPandoc Lua.top)
       case eitherPandoc of
         Left (PandocLuaError msg) -> do
           let expectedMsg = "expected table, got 'true' (boolean)\n"
@@ -223,17 +231,18 @@ assertFilterConversion msg filterPath docIn expectedDoc = do
     applyFilters def [LuaFilter ("lua" </> filterPath)] ["HTML"] docIn
   assertEqual msg expectedDoc actualDoc
 
-roundtripEqual :: (Eq a, Lua.Peekable a, Lua.Pushable a) => a -> IO Bool
-roundtripEqual x = (x ==) <$> roundtripped
+roundtripEqual :: forall a. (Eq a, Lua.Pushable a)
+               => Peeker PandocError a -> a -> IO Bool
+roundtripEqual peeker x = (x ==) <$> roundtripped
  where
-  roundtripped :: Lua.Peekable a => IO a
+  roundtripped :: IO a
   roundtripped = runLuaTest $ do
     oldSize <- Lua.gettop
     Lua.push x
     size <- Lua.gettop
     when (size - oldSize /= 1) $
       error ("not exactly one additional element on the stack: " ++ show size)
-    Lua.peek (-1)
+    forcePeek $ peeker (-1)
 
 runLuaTest :: Lua.LuaE PandocError a -> IO a
 runLuaTest op = runIOorExplode $ do

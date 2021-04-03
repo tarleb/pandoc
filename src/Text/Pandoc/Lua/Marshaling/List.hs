@@ -15,14 +15,14 @@ Marshaling/unmarshaling instances for @pandoc.List@s.
 -}
 module Text.Pandoc.Lua.Marshaling.List
   ( List (..)
+  , peekList'
   ) where
 
+import Control.Monad ((<$!>))
 import Data.Data (Data)
-import HsLua (Peekable, Pushable (push), pushList)
+import HsLua (LuaError, Peeker, Pushable (push), peekList, pushList)
 import Text.Pandoc.Walk (Walkable (..))
-import Text.Pandoc.Lua.Util (defineHowTo, pushViaConstr')
-
-import qualified HsLua as Lua
+import Text.Pandoc.Lua.Util (pushViaConstr')
 
 -- | List wrapper which is marshalled as @pandoc.List@.
 newtype List a = List { fromList :: [a] }
@@ -32,10 +32,8 @@ instance Pushable a => Pushable (List a) where
   push (List xs) =
     pushViaConstr' "List" [pushList push xs]
 
-instance Peekable a => Peekable (List a) where
-  peek idx = defineHowTo "get List" $ do
-    xs <- Lua.peek idx
-    return $ List xs
+peekList' :: LuaError e => Peeker e a -> Peeker e (List a)
+peekList' p = (List <$!>) . peekList p
 
 -- List is just a wrapper, so we can reuse the walk instance for
 -- unwrapped Hasekll lists.

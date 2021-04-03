@@ -15,7 +15,7 @@ module Text.Pandoc.Lua.Module.Pandoc
   ) where
 
 import Prelude hiding (read)
-import Control.Monad (when)
+import Control.Monad ((>=>), when)
 import Control.Monad.Except (throwError)
 import Data.Default (Default (..))
 import Data.Maybe (fromMaybe)
@@ -24,16 +24,17 @@ import HsLua.Class.Peekable (PeekError)
 import System.Exit (ExitCode (..))
 import Text.Pandoc.Class.PandocIO (runIO)
 import Text.Pandoc.Definition (Block, Inline)
-import Text.Pandoc.Lua.Filter (LuaFilter, SingletonsList (..), walkInlines,
+import Text.Pandoc.Lua.Filter (SingletonsList (..), walkInlines,
                                walkInlineLists, walkBlocks, walkBlockLists)
 import Text.Pandoc.Lua.Marshaling ()
+import Text.Pandoc.Lua.Marshaling.AST
 import Text.Pandoc.Lua.Marshaling.List (List (..))
 import Text.Pandoc.Lua.PandocLua (PandocLua, addFunction, liftPandocLua,
                                   loadDefaultModule)
-import Text.Pandoc.Walk (Walkable)
 import Text.Pandoc.Options (ReaderOptions (readerExtensions))
 import Text.Pandoc.Process (pipeProcess)
 import Text.Pandoc.Readers (Reader (..), getReader)
+import Text.Pandoc.Walk (Walkable)
 
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BSL
@@ -48,23 +49,25 @@ pushModule = do
   loadDefaultModule "pandoc"
   addFunction "read" read
   addFunction "pipe" pipe
-  addFunction "walk_block" walk_block
-  addFunction "walk_inline" walk_inline
+  addFunction "walk_block" (walkElement peekBlock pushBlock)
+  addFunction "walk_inline" (walkElement peekInline pushInline)
   return 1
 
 walkElement :: (Walkable (SingletonsList Inline) a,
                 Walkable (SingletonsList Block) a,
                 Walkable (List Inline) a,
                 Walkable (List Block) a)
-            => a -> LuaFilter -> PandocLua a
-walkElement x f = liftPandocLua $
-  walkInlines f x >>= walkInlineLists f >>= walkBlocks f >>= walkBlockLists f
-
-walk_inline :: Inline -> LuaFilter -> PandocLua Inline
-walk_inline = walkElement
-
-walk_block :: Block -> LuaFilter -> PandocLua Block
-walk_block = walkElement
+            => Peeker PandocError a -> Pusher PandocError a
+            -> LuaE PandocError NumResults
+walkElement peek' push' = do
+  x <- forcePeek $ peek' (nthBottom 1)
+  f <- peek (nthBottom 2)
+  let walk' =  walkInlines f
+           >=> walkInlineLists f
+           >=> walkBlocks f
+           >=> walkBlockLists f
+  walk' x >>= push'
+  return (NumResults 1)
 
 read :: T.Text -> Optional T.Text -> PandocLua NumResults
 read content formatSpecOrNil = liftPandocLua $ do

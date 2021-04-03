@@ -16,13 +16,13 @@ module Text.Pandoc.Lua.Module.Utils
   ( pushModule
   ) where
 
+import Control.Applicative ((<|>))
 import Control.Monad ((<$!>))
 import Data.Data (showConstr, toConstr)
 import Data.Default (def)
 import Data.Version (Version)
 import HsLua as Lua hiding (pushModule)
 import HsLua.Class.Peekable (PeekError)
-import HsLua.Marshalling.Peek (toPeeker)
 import Text.Pandoc.Definition
 import Text.Pandoc.Error (PandocError)
 import Text.Pandoc.Lua.Marshaling ()
@@ -30,9 +30,7 @@ import Text.Pandoc.Lua.Marshaling.AST
   ( peekBlock, peekInline, peekPandoc, pushBlock, pushInline, pushPandoc
   , peekAttr, peekListAttributes, peekMeta, peekMetaValue)
 import Text.Pandoc.Lua.Marshaling.SimpleTable
-  ( SimpleTable (..)
-  , pushSimpleTable
-  )
+  ( SimpleTable (..), peekSimpleTable, pushSimpleTable )
 import Text.Pandoc.Lua.Marshaling.Version (peekVersionFuzzy, pushVersion)
 import Text.Pandoc.Lua.PandocLua (PandocLua (unPandocLua))
 
@@ -43,6 +41,7 @@ import qualified HsLua.Packaging as Lua
 import qualified Text.Pandoc.Builder as B
 import qualified Text.Pandoc.Filter.JSON as JSONFilter
 import qualified Text.Pandoc.Shared as Shared
+import qualified Text.Pandoc.UTF8 as UTF8
 import qualified Text.Pandoc.Writers.Shared as Shared
 
 -- | Push the "pandoc.utils" module to the Lua stack.
@@ -64,14 +63,15 @@ pandocUtilsModule = Module
 
     , defun "equals"
       ### liftPure2 (==)
-      <#> parameter (toPeeker peekAstElement) "AST element" "elem1" ""
-      <#> parameter (toPeeker peekAstElement) "AST element" "elem2" ""
+      <#> parameter peekAstElement "AST element" "elem1" ""
+      <#> parameter peekAstElement "AST element" "elem2" ""
       =#> functionResult pushBool "boolean" "true iff elem1 == elem2"
 
     , defun "make_sections"
       ### liftPure3 Shared.makeSections
       <#> parameter peekBool "boolean" "numbering" "add header numbers"
-      <#> parameter (optional peekIntegral) "integer or nil" "baselevel" ""
+      <#> parameter (\i -> (Nothing <$ peekNil i) <|> (Just <$!> peekIntegral i))
+                    "integer or nil" "baselevel" ""
       <#> parameter (peekList peekBlock) "list of blocks"
             "blocks" "document blocks to process"
       =#> functionResult (pushList pushBlock) "list of Blocks"
@@ -91,7 +91,7 @@ pandocUtilsModule = Module
 
     , defun "sha1"
       ### liftPure (SHA.showDigest . SHA.sha1)
-      <#> parameter (fmap (fmap BSL.fromStrict) . peekByteString) "string"
+      <#> parameter (fmap BSL.fromStrict . peekByteString) "string"
             "input" ""
       =#> functionResult pushString "string" "hexadecimal hash value"
       #? "Compute the hash of the given string value."
@@ -110,7 +110,7 @@ pandocUtilsModule = Module
                         Just xs -> return xs
                         Nothing -> do
                           Lua.getglobal "FORMAT"
-                          (:[]) <$!> ((peekString top <* pop 1) >>= force)
+                          (forcePeek ((:[]) <$!> peekString top) <* pop 1)
               JSONFilter.apply def args filterPath doc
           )
       <#> parameter peekPandoc "Pandoc" "doc" "input document"
@@ -126,7 +126,7 @@ pandocUtilsModule = Module
 
     , defun "from_simple_table"
       ### from_simple_table
-      <#> parameter (toPeeker peek) "SimpleTable" "simple_tbl" ""
+      <#> parameter peekSimpleTable "SimpleTable" "simple_tbl" ""
       =?> "Simple table"
 
     , defun "to_roman_numeral"
@@ -137,7 +137,7 @@ pandocUtilsModule = Module
 
     , defun "to_simple_table"
       ### to_simple_table
-      <#> parameter peekBlock "Block" "tbl" "a table"
+      <#> parameter peekTable "Block" "tbl" "a table"
       =#> functionResult pushSimpleTable "SimpleTable" "SimpleTable object"
       #? "Converts a table into an old/simple table."
     ]
@@ -179,13 +179,13 @@ data AstElement
 
 peekAstElement :: PeekError e => Peeker e AstElement
 peekAstElement = retrieving "pandoc AST element" . choice
-  [ (fmap (fmap PandocElement) . peekPandoc)
-  , (fmap (fmap InlineElement) . peekInline)
-  , (fmap (fmap BlockElement) . peekBlock)
-  , (fmap (fmap AttrElement) . peekAttr)
-  , (fmap (fmap ListAttributesElement) . peekListAttributes)
-  , (fmap (fmap MetaElement) . peekMeta)
-  , (fmap (fmap MetaValueElement) . peekMetaValue)
+  [ (fmap PandocElement . peekPandoc)
+  , (fmap InlineElement . peekInline)
+  , (fmap BlockElement . peekBlock)
+  , (fmap AttrElement . peekAttr)
+  , (fmap ListAttributesElement . peekListAttributes)
+  , (fmap MetaElement . peekMeta)
+  , (fmap MetaValueElement . peekMetaValue)
   ]
 
 -- | Converts an old/simple table into a normal table block element.
@@ -214,6 +214,13 @@ to_simple_table = \case
     let (capt, aligns, widths, headers, rows) =
           Shared.toLegacyTable caption specs thead tbodies tfoot
     return $ SimpleTable capt aligns widths headers rows
-  blk ->
-    Lua.failLua $
-      "Expected Table, got " <> showConstr (toConstr blk) <> "."
+  blk -> Lua.failLua $ mconcat
+         [ "Expected Table, got ", showConstr (toConstr blk), "." ]
+
+peekTable :: LuaError e => Peeker e Block
+peekTable idx = peekBlock idx >>= \case
+  t@(Table {}) -> return t
+  b -> Lua.failPeek $ mconcat
+       [ "Expected Table, got "
+       , UTF8.fromString $ showConstr (toConstr b)
+       , "." ]
