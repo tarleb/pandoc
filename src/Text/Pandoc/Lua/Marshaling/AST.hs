@@ -53,10 +53,11 @@ pushPandoc (Pandoc meta blocks) =
   pushViaConstr' "Pandoc" [pushList pushBlock blocks, push meta]
 
 peekPandoc :: LuaError e => Peeker e Pandoc
-peekPandoc idx = retrieving "Pandoc value" $! do
-  meta <- peekFieldRaw peekMeta "meta" idx
-  blks <- peekFieldRaw peekBlocks "blocks" idx
-  return $ Pandoc meta blks
+peekPandoc = fmap (retrieving "Pandoc value")
+  . typeChecked "table" Lua.istable $ \idx -> do
+      meta <- peekFieldRaw peekMeta "meta" idx
+      blks <- peekFieldRaw peekBlocks "blocks" idx
+      return $ Pandoc meta blks
 
 instance Pushable Meta where
   push (Meta mmap) =
@@ -84,16 +85,16 @@ instance Pushable Citation where
     ]
 
 peekCitation :: LuaError e => Peeker e Citation
--- peekCitation = toPeeker peek
-peekCitation idx = retrieving "Citation" $ do
-  idx' <- liftLua $ absindex idx
-  Citation
-    <$!> peekFieldRaw peekText "id" idx'
-    <*>  peekFieldRaw (peekList peekInline) "prefix" idx'
-    <*>  peekFieldRaw (peekList peekInline) "suffix" idx'
-    <*>  peekFieldRaw peekRead "mode" idx'
-    <*>  peekFieldRaw peekIntegral "note_num" idx'
-    <*>  peekFieldRaw peekIntegral "hash" idx'
+peekCitation = fmap (retrieving "Citation")
+  . typeChecked "table" Lua.istable $ \idx -> do
+      idx' <- liftLua $ absindex idx
+      Citation
+        <$!> peekFieldRaw peekText "id" idx'
+        <*>  peekFieldRaw (peekList peekInline) "prefix" idx'
+        <*>  peekFieldRaw (peekList peekInline) "suffix" idx'
+        <*>  peekFieldRaw peekRead "mode" idx'
+        <*>  peekFieldRaw peekIntegral "note_num" idx'
+        <*>  peekFieldRaw peekIntegral "hash" idx'
 
 
 instance Pushable Alignment where
@@ -200,7 +201,9 @@ pushBlock = \case
 
 -- | Return the value at the given index as block if possible.
 peekBlock :: forall e. LuaError e => Peeker e Block
-peekBlock = retrieving "Block" . \idx -> do
+peekBlock = fmap (retrieving "Block")
+  . typeChecked "table" Lua.istable
+  $ \idx -> do
   -- Get the contents of an AST element.
   let mkBlock :: (a -> Block) -> Peeker e a -> Peek e Block
       mkBlock f p = f <$!> peekFieldRaw p "c" idx
@@ -286,7 +289,9 @@ instance Pushable TableBody where
     LuaUtil.addField "body" body
 
 peekTableBody :: LuaError e => Peeker e TableBody
-peekTableBody = retrieving "TableBody" . \idx -> TableBody
+peekTableBody = fmap (retrieving "TableBody")
+  . typeChecked "table" Lua.istable
+  $ \idx -> TableBody
   <$!> peekFieldRaw peekAttr "attr" idx
   <*>  peekFieldRaw ((fmap RowHeadColumns) . peekIntegral) "row_head_columns" idx
   <*>  peekFieldRaw (peekList peekRow) "head" idx
@@ -324,7 +329,9 @@ pushCell (Cell attr align (RowSpan rowSpan) (ColSpan colSpan) contents) = do
   LuaUtil.addField "contents" contents
 
 peekCell :: LuaError e => Peeker e Cell
-peekCell = retrieving "Cell" . \idx -> do
+peekCell = fmap (retrieving "Cell")
+  . typeChecked "table" Lua.istable
+  $ \idx -> do
   attr <- peekFieldRaw peekAttr "attr" idx
   algn <- peekFieldRaw peekRead "alignment" idx
   rs   <- RowSpan <$!> peekFieldRaw peekIntegral "row_span" idx

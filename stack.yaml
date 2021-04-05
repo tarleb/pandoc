@@ -10,7 +10,7 @@ extra-deps:
 - haddock-library-1.10.0
 - jira-wiki-markup-1.4.0
 - git: https://github.com/hslua/hslua
-  commit: 24d13e68f2132749ac03213a26c8602ae430a198
+  commit: 791380288dedd2e352049fe74ec9b122757d20b7
   subdirs:
     - hslua
     - hslua-classes

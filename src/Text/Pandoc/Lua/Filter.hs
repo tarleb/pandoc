@@ -102,13 +102,22 @@ pushFilterFunction (LuaFilterFunction fnRef) =
 -- of the stack is nil, return the default element that was passed to this
 -- function. If none of these apply, raise an error.
 elementOrList :: Peeker PandocError a -> a -> LuaE PandocError [a]
-elementOrList p x = forcePeek . (`lastly` Lua.pop 1) $
-  ([x] <$ peekNil top) <|>          -- got nil, i.e., element is unchanged
-  ((:[]) <$!> p top)   <|>          -- single element
-  peekList p top                    -- list of elements
+elementOrList p x = do
+  elementUnchanged <- Lua.isnil top
+  if elementUnchanged
+    then [x] <$ pop 1
+    else forcePeek . (`lastly` pop 1) $ (((:[]) <$!> p top) <|> peekList p top)
 
--- | Pops and returns a value from the stack; if the value at the top of
--- the stack is @nil@, returns the fallback element.
+-- | Fetches a single element; returns the fallback if the value is @nil@.
+singleElement :: forall a e. (LuaError e) => Peeker e a -> a -> LuaE e a
+singleElement p x = do
+  elementUnchanged <- Lua.isnil top
+  if elementUnchanged
+    then x <$ Lua.pop 1
+    else forcePeek $ p top `lastly` pop 1
+
+-- | Pop and return a value from the stack; if the value at the top of
+-- the stack is @nil@, return the fallback element.
 popOption :: Peeker PandocError a -> a -> LuaE PandocError a
 popOption peeker fallback = forcePeek . (`lastly` pop 1) $
   (fallback <$ peekNil top) <|> peeker top
@@ -236,18 +245,3 @@ metaFilterName = "Meta"
 
 pandocFilterNames :: [Name]
 pandocFilterNames = ["Pandoc", "Doc"]
-
-singleElement :: forall a e. (LuaError e) => Peeker e a -> a -> LuaE e a
-singleElement p x = do
-  elementUnchanged <- Lua.isnil (-1)
-  if elementUnchanged
-    then x <$ Lua.pop 1
-    else do
-    res <- runPeek $ p top
-    case resultToEither res of
-      Right res' -> res' <$ Lua.pop 1
-      Left err  -> do
-        Lua.pop 1
-        Lua.failLua
-          ("Error while trying to get a filter's return " <>
-           "value from Lua stack.\n" <> show err)
