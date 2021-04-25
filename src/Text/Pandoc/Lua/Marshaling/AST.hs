@@ -38,6 +38,8 @@ module Text.Pandoc.Lua.Marshaling.AST
 import Control.Applicative ((<|>), optional)
 import Control.Monad ((<$!>), (>=>))
 import HsLua
+import HsLua.Packaging.Operation hiding (Div)
+import HsLua.Packaging.UDType
 import Text.Pandoc.Definition
 import Text.Pandoc.Lua.Util (pushViaConstr', pushViaConstructor)
 import Text.Pandoc.Lua.Marshaling.CommonState ()
@@ -49,19 +51,32 @@ instance Pushable Pandoc where
   push = pushPandoc
 
 pushPandoc :: LuaError e => Pusher e Pandoc
-pushPandoc (Pandoc meta blocks) =
-  pushViaConstr' "Pandoc" [pushList pushBlock blocks, push meta]
+pushPandoc = pushUD typePandoc
 
 peekPandoc :: LuaError e => Peeker e Pandoc
-peekPandoc = fmap (retrieving "Pandoc value")
-  . typeChecked "table" Lua.istable $ \idx -> do
-      meta <- peekFieldRaw peekMeta "meta" idx
-      blks <- peekFieldRaw peekBlocks "blocks" idx
-      return $ Pandoc meta blks
+peekPandoc = retrieving "Pandoc value" . peekUD typePandoc
+
+typePandoc :: LuaError e => UDType e Pandoc
+typePandoc = deftype "Pandoc"
+  [ operation Eq $ defun "__eq"
+     ### liftPure2 (==)
+     <#> parameter (optional . peekPandoc) "doc1" "pandoc" ""
+     <#> parameter (optional . peekPandoc) "doc2" "pandoc" ""
+     =#> functionResult pushBool "boolean" "true iff the two values are equal"
+  ]
+  [ property "blocks" "list of blocks"
+      (pushList pushBlock, \(Pandoc _ blks) -> blks)
+      (peekList peekBlock, \(Pandoc m _) blks -> Pandoc m blks)
+  , property "meta" "document metadata"
+      (pushMeta, \(Pandoc meta _) -> meta)
+      (peekMeta, \(Pandoc _ blks) meta -> Pandoc meta blks)
+  ]
 
 instance Pushable Meta where
-  push (Meta mmap) =
-    pushViaConstr' "Meta" [push mmap]
+  push = pushMeta
+
+pushMeta :: LuaError e => Pusher e Meta
+pushMeta (Meta mmap) = pushViaConstr' "Meta" [push mmap]
 
 peekMeta :: LuaError e => Peeker e Meta
 peekMeta idx = retrieving "Meta" $
