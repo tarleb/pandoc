@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -22,7 +21,7 @@ module Text.Pandoc.Readers.Markdown (
 import Control.Monad
 import Control.Monad.Except (throwError)
 import Data.Char (isAlphaNum, isPunctuation, isSpace)
-import Data.List (transpose, elemIndex, sortOn, foldl')
+import Data.List (partition, transpose, elemIndex, sortOn, foldl')
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Map as M
 import Data.Maybe
@@ -1818,12 +1817,12 @@ bracketedSpan = do
 -- modified attributes, with the special class or attribute removed if
 -- it does mark a smallcaps span.
 smallCapsAttr :: Attr -> Maybe Attr
-smallCapsAttr (ident, cls, kvs)= case cls of
-  "smallcaps":cls' -> Just (ident, cls', kvs)
-  _ -> case lookup "style" kvs of
-         Just s | isSmallCapsFontVariant s ->
-                  Just (ident, cls, [(k, v) | (k, v) <- kvs, k /= "style"])
-         _ -> Nothing
+smallCapsAttr (ident, cls, kvs)= case partition (== "smallcaps") cls of
+  (_:_, cls') -> Just (ident, cls', kvs)
+  ([], _)     -> case lookup "style" kvs of
+    Just s | isSmallCapsFontVariant s ->
+               Just (ident, cls, [(k, v) | (k, v) <- kvs, k /= "style"])
+    _ -> Nothing
  where
    isSmallCapsFontVariant s =
      T.toLower (T.filter (`notElem` [' ', '\t', ';']) s) ==
@@ -1838,10 +1837,10 @@ isSmallCaps = isJust . smallCapsAttr
 -- modified attributes, with the special "underline" class removed, if
 -- it marks an underline span.
 underlineAttr :: Attr -> Maybe Attr
-underlineAttr = \case
-  (ident, "ul":cls, kvs)        -> Just (ident, cls, kvs)
-  (ident, "underline":cls, kvs) -> Just (ident, cls, kvs)
-  _                             -> Nothing
+underlineAttr (ident, cls, kvs) =
+  case partition (`elem` ["ul", "underline"]) cls of
+    ([], _)   -> Nothing
+    (_, cls') -> Just (ident, cls', kvs)
 
 -- | We treat a span as Underline if class is "ul" or
 -- "underline" (and no other attributes are set).
