@@ -592,16 +592,6 @@ M.Code = M.Inline:create_constructor(
   {{attr = {"identifier", "classes", "attributes"}}, "text"}
 )
 
---- Creates an inline element representing emphasised text.
--- @function Emph
--- @tparam      {Inline,..} content     inline content
--- @treturn Inline emphasis element
-M.Emph = M.Inline:create_constructor(
-  "Emph",
-  function(content) return {c = ensureInlineList(content)} end,
-  "content"
-)
-
 --- Creates a Image inline element
 -- @function Image
 -- @tparam      {Inline,..} caption     text used to describe the image
@@ -616,14 +606,6 @@ M.Image = M.Inline:create_constructor(
     return {c = {ensureAttr(attr), ensureInlineList(caption), {src, title}}}
   end,
   {{attr = {"identifier", "classes", "attributes"}}, "caption", {"src", "title"}}
-)
-
---- Create a LineBreak inline element
--- @function LineBreak
--- @treturn Inline linebreak element
-M.LineBreak = M.Inline:create_constructor(
-  "LineBreak",
-  function() return {} end
 )
 
 --- Creates a link inline element, usually a hyperlink.
@@ -727,32 +709,6 @@ M.RawInline = M.Inline:create_constructor(
   {"format", "text"}
 )
 
---- Creates text rendered in small caps
--- @function SmallCaps
--- @tparam      {Inline,..} content     inline content
--- @treturn     Inline                  smallcaps element
-M.SmallCaps = M.Inline:create_constructor(
-  "SmallCaps",
-  function(content) return {c = ensureInlineList(content)} end,
-  "content"
-)
-
---- Creates a SoftBreak inline element.
--- @function SoftBreak
--- @treturn     Inline                  softbreak element
-M.SoftBreak = M.Inline:create_constructor(
-  "SoftBreak",
-  function() return {} end
-)
-
---- Create a Space inline element
--- @function Space
--- @treturn Inline space element
-M.Space = M.Inline:create_constructor(
-  "Space",
-  function() return {} end
-)
-
 --- Creates a Span inline element
 -- @function Span
 -- @tparam      {Inline,..} content     inline content
@@ -764,66 +720,6 @@ M.Span = M.Inline:create_constructor(
     return {c = {ensureAttr(attr), ensureInlineList(content)}}
   end,
   {{attr = {"identifier", "classes", "attributes"}}, "content"}
-)
-
---- Creates a Str inline element
--- @function Str
--- @tparam      string      text        content
--- @treturn     Inline                  string element
-M.Str = M.Inline:create_constructor(
-  "Str",
-  function(text) return {c = text} end,
-  "text"
-)
-
---- Creates text which is striked out.
--- @function Strikeout
--- @tparam      {Inline,..} content     inline content
--- @treturn     Inline                  strikeout element
-M.Strikeout = M.Inline:create_constructor(
-  "Strikeout",
-  function(content) return {c = ensureInlineList(content)} end,
-  "content"
-)
-
---- Creates a Strong element, whose text is usually displayed in a bold font.
--- @function Strong
--- @tparam      {Inline,..} content     inline content
--- @treturn     Inline                  strong element
-M.Strong = M.Inline:create_constructor(
-  "Strong",
-  function(content) return {c = ensureInlineList(content)} end,
-  "content"
-)
-
---- Creates a Subscript inline element
--- @function Subscript
--- @tparam      {Inline,..} content     inline content
--- @treturn     Inline                  subscript element
-M.Subscript = M.Inline:create_constructor(
-  "Subscript",
-  function(content) return {c = ensureInlineList(content)} end,
-  "content"
-)
-
---- Creates a Superscript inline element
--- @function Superscript
--- @tparam      {Inline,..} content     inline content
--- @treturn     Inline                  superscript element
-M.Superscript = M.Inline:create_constructor(
-  "Superscript",
-  function(content) return {c = ensureInlineList(content)} end,
-  "content"
-)
-
---- Creates an Underline inline element
--- @function Underline
--- @tparam      {Inline,..} content     inline content
--- @treturn     Inline                  underline element
-M.Underline = M.Inline:create_constructor(
-  "Underline",
-  function(content) return {c = ensureInlineList(content)} end,
-  "content"
 )
 
 

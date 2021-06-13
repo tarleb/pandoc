@@ -1,5 +1,8 @@
 local num_inlines = 0
 
+pandoc.Inline.constructor['Emph'] = pandoc.Emph
+pandoc.Inline.constructor['Str'] = pandoc.Str
+
 function catch_all(el)
   if el.tag and pandoc.Inline.constructor[el.tag] then
     num_inlines = num_inlines + 1

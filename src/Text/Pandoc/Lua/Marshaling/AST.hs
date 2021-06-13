@@ -36,6 +36,7 @@ module Text.Pandoc.Lua.Marshaling.AST
   ) where
 
 import Control.Applicative ((<|>), optional)
+import Control.Monad.Catch (throwM)
 import Control.Monad ((<$!>), (>=>))
 import Data.Data (showConstr, toConstr)
 import Data.Text (Text)
@@ -43,6 +44,7 @@ import HsLua
 import HsLua.Packaging.Operation hiding (Div)
 import HsLua.Packaging.UDType
 import Text.Pandoc.Definition
+import Text.Pandoc.Error (PandocError (PandocLuaError))
 import Text.Pandoc.Lua.Util (pushViaConstr', pushViaConstructor)
 import Text.Pandoc.Lua.Marshaling.CommonState ()
 
@@ -376,29 +378,50 @@ data Content
   = ContentBlocks [Block]
   | ContentInlines [Inline]
 
+setInlineContent :: Inline -> Content -> Possible Inline
+setInlineContent = \case
+  Emph _        -> Actual . Emph . inlineContent
+  Strong _      -> Actual . Strong . inlineContent
+  SmallCaps _   -> Actual . SmallCaps . inlineContent
+  Underline _   -> Actual . Underline . inlineContent
+  Span attr _   -> Actual . Span attr . inlineContent
+  Subscript _   -> Actual . Subscript . inlineContent
+  Superscript _ -> Actual . Superscript . inlineContent
+  Note _        -> Actual . Note . blockContent
+  _             -> const Absent
+  where
+    inlineContent = \case
+      ContentInlines inlns -> inlns
+      ContentBlocks _      -> throwM $
+                              PandocLuaError "expected Inlines, got Blocks"
+    blockContent = \case
+      ContentBlocks blks -> blks
+      ContentInlines _   -> throwM $
+                            PandocLuaError "expected Blocks, got Inlines"
+
 getInlineContent :: Inline -> Possible Content
 getInlineContent = \case
-  Emph inls -> Actual $ ContentInlines inls
-  Strong inls -> Actual $ ContentInlines inls
-  SmallCaps inls -> Actual $ ContentInlines inls
-  Underline inls -> Actual $ ContentInlines inls
-  Span _ inls -> Actual $ ContentInlines inls
-  Subscript inlns -> Actual $ ContentInlines inlns
+  Emph inls         -> Actual $ ContentInlines inls
+  Strong inls       -> Actual $ ContentInlines inls
+  SmallCaps inls    -> Actual $ ContentInlines inls
+  Underline inls    -> Actual $ ContentInlines inls
+  Span _ inls       -> Actual $ ContentInlines inls
+  Subscript inlns   -> Actual $ ContentInlines inlns
   Superscript inlns -> Actual $ ContentInlines inlns
   Note blks         -> Actual $ ContentBlocks blks
   _                 -> Absent
 
-getInlineTitle :: Inline -> Possible Text
-getInlineTitle = \case
-  Image _ _ (_, tit) -> Actual tit
-  Link _ _ (_, tit)  -> Actual tit
-  _                  -> Absent
+-- getInlineTitle :: Inline -> Possible Text
+-- getInlineTitle = \case
+--   Image _ _ (_, tit) -> Actual tit
+--   Link _ _ (_, tit)  -> Actual tit
+--   _                  -> Absent
 
-getInlineSrc :: Inline -> Possible Text
-getInlineSrc = \case
-  Image _ _ (src, _) -> Actual src
-  Link _ _ (src, _)  -> Actual src
-  _                  -> Absent
+-- getInlineSrc :: Inline -> Possible Text
+-- getInlineSrc = \case
+--   Image _ _ (src, _) -> Actual src
+--   Link _ _ (src, _)  -> Actual src
+--   _                  -> Absent
 
 getInlineAttr :: Inline -> Possible Attr
 getInlineAttr = \case
@@ -422,6 +445,16 @@ showInline = defun "show"
   <#> parameter peekInline "inline" "Inline" "Object"
   =#> functionResult pushString "string" "stringified Inline"
 
+pushContent :: LuaError e => Pusher e Content
+pushContent = \case
+  ContentBlocks blks -> pushList pushBlock blks
+  ContentInlines inlns -> pushList pushInline inlns
+
+peekContent :: LuaError e => Peeker e Content
+peekContent idx =
+  (ContentInlines <$!> peekList peekInline idx) <|>
+  (ContentBlocks  <$!> peekList peekBlock idx)
+
 typeInline :: LuaError e => UDType e Inline
 typeInline = deftype "Inline"
   [ operation Tostring showInline
@@ -437,7 +470,9 @@ typeInline = deftype "Inline"
   , possibleProperty "text" "text contents"
       (pushText, getInlineText)
       (peekText, setInlineText)
-
+  , possibleProperty "content" "element contents"
+      (pushContent, getInlineContent)
+      (peekContent, setInlineContent)
   , readonly "tag" "type of Inline"
       (pushString, showConstr . toConstr )
   , alias "t" "tag" ["tag"]
@@ -454,26 +489,16 @@ pushInline = \case
   Cite citations lst       -> pushViaConstructor @e "Cite" lst citations
   Code attr lst            -> pushViaConstr' @e "Code"
                               [push lst, pushAttr attr]
-  Emph inlns               -> pushViaConstructor @e "Emph" inlns
-  Underline inlns          -> pushViaConstructor @e "Underline" inlns
   Image attr alt (src,tit) -> pushViaConstr' @e "Image"
                               [push alt, push src, push tit, pushAttr attr]
-  LineBreak                -> pushViaConstructor @e "LineBreak"
   Link attr lst (src,tit)  -> pushViaConstr' @e "Link"
                               [push lst, push src, push tit, pushAttr attr]
   Note blcks               -> pushViaConstructor @e "Note" blcks
   Math mty str             -> pushViaConstructor @e "Math" mty str
   Quoted qt inlns          -> pushViaConstructor @e "Quoted" qt inlns
   RawInline f cs           -> pushViaConstructor @e "RawInline" f cs
-  SmallCaps inlns          -> pushViaConstructor @e "SmallCaps" inlns
-  SoftBreak                -> pushViaConstructor @e "SoftBreak"
-  Space                    -> pushViaConstructor @e "Space"
   Span attr inlns          -> pushViaConstr' @e "Span"
                               [push inlns, pushAttr attr]
-  Strikeout inlns          -> pushViaConstructor @e "Strikeout" inlns
-  Strong inlns             -> pushViaConstructor @e "Strong" inlns
-  Subscript inlns          -> pushViaConstructor @e "Subscript" inlns
-  Superscript inlns        -> pushViaConstructor @e "Superscript" inlns
   x                        -> pushUD typeInline x
 
 -- | Return the value at the given index as inline if possible.
@@ -486,27 +511,16 @@ peekInline = retrieving "Inline" . \idx -> peekUD typeInline idx <|> do
     "Cite"       -> mkBlock (uncurry Cite) $
                     peekPair (peekList peekCitation) peekInlines
     "Code"       -> mkBlock (uncurry Code) (peekPair peekAttr peekText)
-    "Emph"       -> mkBlock Emph peekInlines
-    "Underline"  -> mkBlock Underline peekInlines
     "Image"      -> mkBlock (\(attr, lst, tgt) -> Image attr lst tgt)
                     $ peekTriple peekAttr peekInlines
                                  (peekPair peekText peekText)
     "Link"       -> mkBlock (\(attr, lst, tgt) -> Link attr lst tgt) $
                     peekTriple peekAttr peekInlines (peekPair peekText peekText)
-    "LineBreak"  -> return LineBreak
     "Note"       -> mkBlock Note peekBlocks
     "Math"       -> mkBlock (uncurry Math) (peekPair peekRead peekText)
     "Quoted"     -> mkBlock (uncurry Quoted) (peekPair peekRead peekInlines)
     "RawInline"  -> mkBlock (uncurry RawInline) (peekPair peekFormat peekText)
-    "SmallCaps"  -> mkBlock SmallCaps peekInlines
-    "SoftBreak"  -> return SoftBreak
-    "Space"      -> return Space
     "Span"       -> mkBlock (uncurry Span) (peekPair peekAttr peekInlines)
-    "Str"        -> mkBlock Str peekText
-    "Strikeout"  -> mkBlock Strikeout peekInlines
-    "Strong"     -> mkBlock Strong peekInlines
-    "Subscript"  -> mkBlock Subscript peekInlines
-    "Superscript"-> mkBlock Superscript peekInlines
     Name tag -> Lua.failPeek ("Unknown inline type: " <> tag)
 
 pushAttr :: forall e. LuaError e => Attr -> LuaE e ()

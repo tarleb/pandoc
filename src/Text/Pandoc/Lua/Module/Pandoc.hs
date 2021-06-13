@@ -16,7 +16,7 @@ module Text.Pandoc.Lua.Module.Pandoc
 
 import Prelude hiding (read)
 import Control.Applicative (optional)
-import Control.Monad ((>=>), when)
+import Control.Monad ((<$!>), (>=>), when)
 import Control.Monad.Except (throwError)
 import Data.Default (Default (..))
 import Data.Maybe (fromMaybe)
@@ -54,15 +54,43 @@ pushModule = do
   addFunction "walk_inline" (walkElement peekInline pushInline)
   -- Constructors
   addFunction "Pandoc" mkPandoc
-  liftPandocLua $
-    pushName "Str" *> pushDocumentedFunction mkStr *> rawset (nth 3)
+  liftPandocLua $ do
+    let addConstr name fn =
+          pushName name *> pushDocumentedFunction fn *> rawset (nth 3)
+    addConstr "Emph" (mkInlinesConstr Emph)
+    addConstr "LineBreak" (defun "" ### return LineBreak
+                           =#> functionResult pushInline "Inline" "line break")
+    addConstr "SmallCaps" (mkInlinesConstr SmallCaps)
+    addConstr "SoftBreak" (defun "" ### return SoftBreak
+                           =#> functionResult pushInline "Inline" "soft break")
+    addConstr "Str" mkStr
+    addConstr "Strong" (mkInlinesConstr Strong)
+    addConstr "Strikeout" (mkInlinesConstr Strikeout)
+    addConstr "Subscript" (mkInlinesConstr Subscript)
+    addConstr "Superscript" (mkInlinesConstr Superscript)
+    addConstr "Underline" (mkInlinesConstr Underline)
+    addConstr "Space" (defun "" ### return Space
+                       =#> functionResult pushInline "Inline" "new Space")
   return 1
+
+mkInlinesConstr :: LuaError e => ([Inline] -> Inline) -> DocumentedFunction e
+mkInlinesConstr constr = defun ""
+  ### liftPure (\x -> x `seq` constr x)
+  <#> parameter peekFuzzyInlines "content" "Inlines" ""
+  =#> functionResult pushInline "Inline" "new object"
 
 mkStr :: LuaError e => DocumentedFunction e
 mkStr = defun "Str"
-  ### liftPure Str
+  ### liftPure (\s -> s `seq` Str s)
   <#> parameter peekText "text" "string" ""
   =#> functionResult pushInline "Inline" "new Str object"
+
+peekFuzzyInlines :: LuaError e => Peeker e [Inline]
+peekFuzzyInlines = choice
+  [ peekList peekInline
+  , fmap pure . peekInline
+  , \idx -> pure . Str <$!> peekText idx
+  ]
 
 walkElement :: (Walkable (SingletonsList Inline) a,
                 Walkable (SingletonsList Block) a,
