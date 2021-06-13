@@ -54,7 +54,15 @@ pushModule = do
   addFunction "walk_inline" (walkElement peekInline pushInline)
   -- Constructors
   addFunction "Pandoc" mkPandoc
+  liftPandocLua $
+    pushName "Str" *> pushDocumentedFunction mkStr *> rawset (nth 3)
   return 1
+
+mkStr :: LuaError e => DocumentedFunction e
+mkStr = defun "Str"
+  ### liftPure Str
+  <#> parameter peekText "text" "string" ""
+  =#> functionResult pushInline "Inline" "new Str object"
 
 walkElement :: (Walkable (SingletonsList Inline) a,
                 Walkable (SingletonsList Block) a,

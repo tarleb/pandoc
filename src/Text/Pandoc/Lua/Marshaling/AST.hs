@@ -37,6 +37,8 @@ module Text.Pandoc.Lua.Marshaling.AST
 
 import Control.Applicative ((<|>), optional)
 import Control.Monad ((<$!>), (>=>))
+import Data.Data (showConstr, toConstr)
+import Data.Text (Text)
 import HsLua
 import HsLua.Packaging.Operation hiding (Div)
 import HsLua.Packaging.UDType
@@ -354,6 +356,98 @@ peekCell = fmap (retrieving "Cell")
   blks <- peekFieldRaw peekBlocks "contents" idx
   return $! Cell attr algn rs cs blks
 
+getInlineText :: Inline -> Possible Text
+getInlineText = \case
+  Code _ lst      -> Actual lst
+  Math _ str      -> Actual str
+  RawInline _ raw -> Actual raw
+  Str s           -> Actual s
+  _               -> Absent
+
+setInlineText :: Inline -> Text -> Possible Inline
+setInlineText = \case
+  Code attr _     -> Actual . Code attr
+  Math mt _       -> Actual . Math mt
+  RawInline f _   -> Actual . RawInline f
+  Str _           -> Actual . Str
+  _               -> const Absent
+
+data Content
+  = ContentBlocks [Block]
+  | ContentInlines [Inline]
+
+getInlineContent :: Inline -> Possible Content
+getInlineContent = \case
+  Emph inls -> Actual $ ContentInlines inls
+  Strong inls -> Actual $ ContentInlines inls
+  SmallCaps inls -> Actual $ ContentInlines inls
+  Underline inls -> Actual $ ContentInlines inls
+  Span _ inls -> Actual $ ContentInlines inls
+  Subscript inlns -> Actual $ ContentInlines inlns
+  Superscript inlns -> Actual $ ContentInlines inlns
+  Note blks         -> Actual $ ContentBlocks blks
+  _                 -> Absent
+
+getInlineTitle :: Inline -> Possible Text
+getInlineTitle = \case
+  Image _ _ (_, tit) -> Actual tit
+  Link _ _ (_, tit)  -> Actual tit
+  _                  -> Absent
+
+getInlineSrc :: Inline -> Possible Text
+getInlineSrc = \case
+  Image _ _ (src, _) -> Actual src
+  Link _ _ (src, _)  -> Actual src
+  _                  -> Absent
+
+getInlineAttr :: Inline -> Possible Attr
+getInlineAttr = \case
+  Code attr _    -> Actual attr
+  Image attr _ _ -> Actual attr
+  Link attr _ _  -> Actual attr
+  Span attr _    -> Actual attr
+  _              -> Absent
+
+setInlineAttr :: Inline -> Attr -> Possible Inline
+setInlineAttr = \case
+  Code _ cs       -> Actual . (`Code` cs)
+  Image _ cpt tgt -> Actual . \attr -> Image attr cpt tgt
+  Link _ cpt tgt  -> Actual . \attr -> Link attr cpt tgt
+  Span _ inlns    -> Actual . (`Span` inlns)
+  _               -> const Absent
+
+showInline :: LuaError e => DocumentedFunction e
+showInline = defun "show"
+  ### liftPure (show @Inline)
+  <#> parameter peekInline "inline" "Inline" "Object"
+  =#> functionResult pushString "string" "stringified Inline"
+
+typeInline :: LuaError e => UDType e Inline
+typeInline = deftype "Inline"
+  [ operation Tostring showInline
+  , operation Eq $ defun "__eq"
+      ### liftPure2 (==)
+      <#> parameter peekInline "a" "Inline" ""
+      <#> parameter peekInline "b" "Inline" ""
+      =#> functionResult pushBool "boolean" "whether the two are equal"
+  ]
+  [ possibleProperty "attr" "element attributes"
+      (pushAttr, getInlineAttr)
+      (peekAttr, setInlineAttr)
+  , possibleProperty "text" "text contents"
+      (pushText, getInlineText)
+      (peekText, setInlineText)
+
+  , readonly "tag" "type of Inline"
+      (pushString, showConstr . toConstr )
+  , alias "t" "tag" ["tag"]
+
+  , method $ defun "clone"
+      ### return
+      <#> parameter peekInline "inline" "Inline" "self"
+      =#> functionResult pushInline "Inline" "cloned Inline"
+  ]
+
 -- | Push an inline element to the top of the lua stack.
 pushInline :: forall e. LuaError e => Inline -> LuaE e ()
 pushInline = \case
@@ -376,15 +470,15 @@ pushInline = \case
   Space                    -> pushViaConstructor @e "Space"
   Span attr inlns          -> pushViaConstr' @e "Span"
                               [push inlns, pushAttr attr]
-  Str str                  -> pushViaConstructor @e "Str" str
   Strikeout inlns          -> pushViaConstructor @e "Strikeout" inlns
   Strong inlns             -> pushViaConstructor @e "Strong" inlns
   Subscript inlns          -> pushViaConstructor @e "Subscript" inlns
   Superscript inlns        -> pushViaConstructor @e "Superscript" inlns
+  x                        -> pushUD typeInline x
 
 -- | Return the value at the given index as inline if possible.
 peekInline :: forall e. LuaError e => Peeker e Inline
-peekInline = retrieving "Inline" . \idx -> do
+peekInline = retrieving "Inline" . \idx -> peekUD typeInline idx <|> do
   -- Get the contents of an AST element.
   let mkBlock :: (a -> Inline) -> Peeker e a -> Peek e Inline
       mkBlock f p = f <$!> peekFieldRaw p "c" idx
