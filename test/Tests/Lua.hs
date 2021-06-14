@@ -17,7 +17,7 @@ import Control.Monad (when)
 import HsLua as Lua hiding (error)
 import System.FilePath ((</>))
 import Test.Tasty (TestTree, localOption)
-import Test.Tasty.HUnit (Assertion, assertEqual, testCase)
+import Test.Tasty.HUnit (Assertion, HasCallStack, assertEqual, testCase)
 import Test.Tasty.QuickCheck (QuickCheckTests (..), ioProperty, testProperty)
 import Text.Pandoc.Arbitrary ()
 import Text.Pandoc.Builder (bulletList, definitionList, displayMath, divWith,
@@ -204,7 +204,7 @@ tests = map (localOption (QuickCheckTests 20))
                 [Para [Str "ignored"]])
       Lua.getfield Lua.top "attr"
       Lua.liftIO . assertEqual "no accessor" (("hi", ["moin"], []) :: Attr)
-        =<< Lua.peek Lua.top
+        =<< forcePeek (peekAttr Lua.top)
 
   , testCase "module `pandoc.system` is present" . runLuaTest $ do
       Lua.getglobal' "pandoc.system"
@@ -244,7 +244,7 @@ roundtripEqual peeker x = (x ==) <$> roundtripped
       error ("not exactly one additional element on the stack: " ++ show size)
     forcePeek $ peeker (-1)
 
-runLuaTest :: Lua.LuaE PandocError a -> IO a
+runLuaTest :: HasCallStack => Lua.LuaE PandocError a -> IO a
 runLuaTest op = runIOorExplode $ do
   setUserDataDir (Just "../data")
   res <- runLua op

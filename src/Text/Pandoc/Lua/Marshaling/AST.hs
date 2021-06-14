@@ -46,6 +46,7 @@ import HsLua.Packaging.UDType
 import Text.Pandoc.Definition
 import Text.Pandoc.Error (PandocError (PandocLuaError))
 import Text.Pandoc.Lua.Util (pushViaConstr', pushViaConstructor)
+import Text.Pandoc.Lua.Marshaling.Attr (peekAttr, pushAttr)
 import Text.Pandoc.Lua.Marshaling.CommonState ()
 
 import qualified HsLua as Lua
@@ -476,6 +477,9 @@ typeInline = deftype "Inline"
   , readonly "tag" "type of Inline"
       (pushString, showConstr . toConstr )
   , alias "t" "tag" ["tag"]
+  , alias "identifier" "element ID" ["attr", "identifier"]
+  , alias "classes" "element classes" ["attr", "classes"]
+  , alias "attributes" "element attributes" ["attr", "attributes"]
 
   , method $ defun "clone"
       ### return
@@ -497,8 +501,6 @@ pushInline = \case
   Math mty str             -> pushViaConstructor @e "Math" mty str
   Quoted qt inlns          -> pushViaConstructor @e "Quoted" qt inlns
   RawInline f cs           -> pushViaConstructor @e "RawInline" f cs
-  Span attr inlns          -> pushViaConstr' @e "Span"
-                              [push inlns, pushAttr attr]
   x                        -> pushUD typeInline x
 
 -- | Return the value at the given index as inline if possible.
@@ -520,21 +522,7 @@ peekInline = retrieving "Inline" . \idx -> peekUD typeInline idx <|> do
     "Math"       -> mkBlock (uncurry Math) (peekPair peekRead peekText)
     "Quoted"     -> mkBlock (uncurry Quoted) (peekPair peekRead peekInlines)
     "RawInline"  -> mkBlock (uncurry RawInline) (peekPair peekFormat peekText)
-    "Span"       -> mkBlock (uncurry Span) (peekPair peekAttr peekInlines)
     Name tag -> Lua.failPeek ("Unknown inline type: " <> tag)
-
-pushAttr :: forall e. LuaError e => Attr -> LuaE e ()
-pushAttr (id', classes, kv) = pushViaConstr' @e "Attr"
-  [ pushText id'
-  , pushList pushText classes
-  , pushList (pushPair pushText pushText) kv
-  ]
-
-peekAttr :: LuaError e => Peeker e Attr
-peekAttr = retrieving "Attr" . peekTriple
-  peekText
-  (peekList peekText)
-  (peekList (peekPair peekText peekText))
 
 pushListAttributes :: forall e. LuaError e => ListAttributes -> LuaE e ()
 pushListAttributes (start, style, delimiter) =

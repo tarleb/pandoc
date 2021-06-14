@@ -63,6 +63,7 @@ pushModule = do
     addConstr "SmallCaps" (mkInlinesConstr SmallCaps)
     addConstr "SoftBreak" (defun "" ### return SoftBreak
                            =#> functionResult pushInline "Inline" "soft break")
+    addConstr "Span" mkSpan
     addConstr "Str" mkStr
     addConstr "Strong" (mkInlinesConstr Strong)
     addConstr "Strikeout" (mkInlinesConstr Strikeout)
@@ -83,7 +84,14 @@ mkStr :: LuaError e => DocumentedFunction e
 mkStr = defun "Str"
   ### liftPure (\s -> s `seq` Str s)
   <#> parameter peekText "text" "string" ""
-  =#> functionResult pushInline "Inline" "new Str object"
+  =#> functionResult pushInline "Inline" "Str inline object"
+
+mkSpan :: LuaError e => DocumentedFunction e
+mkSpan = defun "Span"
+  ### liftPure2 (\s a -> s `seq` a `seq` Span (fromMaybe nullAttr a) s)
+  <#> parameter peekFuzzyInlines "content" "Inlines" ""
+  <#> optionalParameter peekAttr "attr" "Attr" ""
+  =#> functionResult pushInline "Inline" "Span inline object"
 
 peekFuzzyInlines :: LuaError e => Peeker e [Inline]
 peekFuzzyInlines = choice

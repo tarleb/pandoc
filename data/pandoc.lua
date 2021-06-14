@@ -305,6 +305,8 @@ local function ensureAttr(attr)
   elseif type(attr) == 'string' then
     -- treat argument as ID
     return M.Attr(attr)
+  elseif type(attr) == 'userdata' then
+    return attr
   end
   -- print(arg, ...)
   error('Could not convert to Attr')
@@ -707,19 +709,6 @@ M.RawInline = M.Inline:create_constructor(
   "RawInline",
   function(format, text) return {c = {format, text}} end,
   {"format", "text"}
-)
-
---- Creates a Span inline element
--- @function Span
--- @tparam      {Inline,..} content     inline content
--- @tparam[opt] Attr        attr  additional attributes
--- @treturn Inline span element
-M.Span = M.Inline:create_constructor(
-  "Span",
-  function(content, attr)
-    return {c = {ensureAttr(attr), ensureInlineList(content)}}
-  end,
-  {{attr = {"identifier", "classes", "attributes"}}, "content"}
 )
 
 

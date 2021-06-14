@@ -110,6 +110,7 @@ return {
         }
         local span = pandoc.Span 'test'
         span.attr = html_attributes
+        span = span:clone() -- normalize
         assert.are_equal(span.attr.identifier, 'the-id')
         assert.are_equal(span.attr.classes[1], 'class1')
         assert.are_equal(span.attr.classes[2], 'class2')
