@@ -688,7 +688,7 @@ So is ‘pine.’</p>
 <p>Images</p>
 </title>
 <p>From “Voyage dans la Lune” by Georges Melies (1902):</p>
-<image l:href="#image1" l:type="imageType" alt="lalune" title="Voyage dans la Lune" />
+<image l:href="#image1" l:type="inlineImageType" alt="" />
 <p>Here is a movie <image l:href="#image2" l:type="inlineImageType" alt="movie" /> icon.</p>
 <empty-line />
 </section>

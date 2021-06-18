@@ -409,6 +409,17 @@ blockToRST (DefinitionList items) = do
   -- ensure that sublists have preceding blank line
   return $ blankline $$ vcat contents $$ blankline
 
+blockToRST (Figure (ident, classes, _) _ body) = do
+  content <- blockListToRST body
+  return $ blankline $$ (
+    ".. container:: float" <> space <>
+      literal (T.unwords (filter (/= "container") classes))) $$
+    (if T.null ident
+        then blankline
+        else "   :name: " <> literal ident $$ blankline) $$
+    nest 3 content $$
+    blankline
+
 -- | Convert bullet list item (list of blocks) to RST.
 bulletListItemToRST :: PandocMonad m => [Block] -> RST m (Doc Text)
 bulletListItemToRST items = do

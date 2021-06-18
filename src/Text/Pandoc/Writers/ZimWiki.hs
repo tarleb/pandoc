@@ -180,6 +180,10 @@ blockToZimWiki opts (DefinitionList items) = do
   contents <- mapM (definitionListItemToZimWiki opts) items
   return $ vcat contents
 
+blockToZimWiki opts (Figure _ _ body) = do
+  contents <- blockListToZimWiki opts body
+  return $ contents <> "\n"
+
 definitionListItemToZimWiki :: PandocMonad m
                             => WriterOptions
                             -> ([Inline],[[Block]])

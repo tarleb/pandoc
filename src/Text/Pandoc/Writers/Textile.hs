@@ -243,6 +243,19 @@ blockToTextile opts (DefinitionList items) = do
   contents <- withUseTags $ mapM (definitionListItemToTextile opts) items
   return $ "<dl>\n" <> vcat contents <> "\n</dl>\n"
 
+blockToTextile opts (Figure attr (Caption _ caption)  body) = do
+  let startTag = render Nothing $ tagWithAttrs "figure" attr
+  let endTag = "</figure>"
+  let captionInlines = blocksToInlines caption
+  captionMarkup <- if null captionInlines
+                      then return ""
+                      else ((<> "\n\n</figcaption>\n\n") .  ("<figcaption>\n\n" <>)) <$>
+                          inlineListToTextile opts (blocksToInlines caption)
+  contents <- blockListToTextile opts body
+  return $ startTag <> "\n\n" <>
+    captionMarkup <>
+    contents <> "\n\n" <> endTag <> "\n"
+
 -- Auxiliary functions for lists:
 
 -- | Convert ordered list attributes to HTML attribute string

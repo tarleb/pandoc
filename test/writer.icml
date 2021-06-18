@@ -215,11 +215,6 @@
           </TabList>
         </Properties>
       </ParagraphStyle>
-      <ParagraphStyle Self="ParagraphStyle/Caption" Name="Caption" LeftIndent="0">
-        <Properties>
-          <BasedOn type="object">$ID/NormalParagraphStyle</BasedOn>
-        </Properties>
-      </ParagraphStyle>
       <ParagraphStyle Self="ParagraphStyle/CodeBlock" Name="CodeBlock" LeftIndent="0">
         <Properties>
           <BasedOn type="object">$ID/NormalParagraphStyle</BasedOn>
@@ -258,11 +253,6 @@
         </Properties>
       </ParagraphStyle>
       <ParagraphStyle Self="ParagraphStyle/DefListTerm" Name="DefListTerm" LeftIndent="0" BulletsAndNumberingListType="BulletList" FontStyle="Bold">
-        <Properties>
-          <BasedOn type="object">$ID/NormalParagraphStyle</BasedOn>
-        </Properties>
-      </ParagraphStyle>
-      <ParagraphStyle Self="ParagraphStyle/Figure" Name="Figure" LeftIndent="0">
         <Properties>
           <BasedOn type="object">$ID/NormalParagraphStyle</BasedOn>
         </Properties>
@@ -2780,7 +2770,7 @@ These should not be escaped:  \$ \\ \&gt; \[ \{</Content>
   </CharacterStyleRange>
 </ParagraphStyleRange>
 <Br />
-<ParagraphStyleRange AppliedParagraphStyle="ParagraphStyle/Figure">
+<ParagraphStyleRange AppliedParagraphStyle="">
   <CharacterStyleRange AppliedCharacterStyle="$ID/NormalCharacterStyle">
     <Rectangle Self="uec" StrokeWeight="0" ItemTransform="1 0 0 1 75 -75">
       <Properties>
@@ -2805,12 +2795,6 @@ These should not be escaped:  \$ \\ \&gt; \[ \{</Content>
         <Link Self="ueb" LinkResourceURI="file:lalune.jpg" />
       </Image>
     </Rectangle>
-  </CharacterStyleRange>
-</ParagraphStyleRange>
-<Br />
-<ParagraphStyleRange AppliedParagraphStyle="ParagraphStyle/Caption">
-  <CharacterStyleRange AppliedCharacterStyle="$ID/NormalCharacterStyle">
-    <Content>lalune</Content>
   </CharacterStyleRange>
 </ParagraphStyleRange>
 <Br />

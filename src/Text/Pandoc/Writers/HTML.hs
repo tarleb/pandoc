@@ -1057,6 +1057,30 @@ blockToHtmlInner opts (DefinitionList lst) = do
   defList opts contents
 blockToHtmlInner opts (Table attr caption colspecs thead tbody tfoot) =
   tableToHtml opts (Ann.toTable attr caption colspecs thead tbody tfoot)
+blockToHtmlInner opts (Figure attrs (Caption _ captBody)  body) = do
+  html5 <- gets stHtml5
+
+  htmlAttrs <- attrsToHtml opts attrs
+  contents <- blockListToHtml opts body
+
+  if html5
+     then do
+         capt <- if null captBody
+                    then return mempty
+                    else blockListToHtml opts captBody >>= \cb -> return $ mconcat
+                         [ H5.figcaption cb
+                         , nl ]
+         return $ foldl (!) H5.figure htmlAttrs $ mconcat
+             [nl, contents, nl, capt]
+     else do
+         capt <- if null captBody
+                    then return mempty
+                    else blockListToHtml opts captBody >>= \cb -> return $
+                            mconcat
+                                [ (H.div ! A.class_ "figcaption") cb, nl ]
+
+         return $ foldl (!) H.div (A.class_ "float" : htmlAttrs) $ mconcat
+             [nl, contents, nl, capt]
 
 -- | Convert Pandoc block element to HTML. All the legwork is done by
 -- 'blockToHtmlInner', this just takes care of emitting the notes after

@@ -783,10 +783,9 @@ Images
 
 From “Voyage dans la Lune” by Georges Melies (1902):
 
-.. figure:: lalune.jpg
-   :alt: Voyage dans la Lune
+.. container:: float
 
-   lalune
+   |image1|
 
 Here is a movie |movie| icon.
 
@@ -833,4 +832,5 @@ This paragraph should not be part of the note, as it is not indented.
 .. [5]
    In list.
 
+.. |image1| image:: lalune.jpg
 .. |movie| image:: movie.jpg

@@ -770,7 +770,6 @@ or here: <http://example.com/>
 :END:
 From "Voyage dans la Lune" by Georges Melies (1902):
 
-#+caption: lalune
 [[file:lalune.jpg]]
 
 Here is a movie [[file:movie.jpg]] icon.

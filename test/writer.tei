@@ -808,9 +808,8 @@ or here: &lt;http://example.com/&gt;
   <head>Images</head>
   <p>From <quote>Voyage dans la Lune</quote> by Georges Melies (1902):</p>
   <p><figure>
-    <head>lalune</head>
     <graphic url="lalune.jpg" />
-    <figDesc>fig:Voyage dans la Lune</figDesc>
+    <figDesc>Voyage dans la Lune</figDesc>
   </figure></p>
   <p>Here is a movie <figure>
     <head>movie</head>

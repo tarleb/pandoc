@@ -234,6 +234,13 @@ blockToOrg (OrderedList (start, _, delim) items) = do
 blockToOrg (DefinitionList items) = do
   contents <- mapM definitionListItemToOrg items
   return $ vcat contents $$ blankline
+blockToOrg (Figure (ident, _, _) _ body) = do
+  -- Represent the figure as content that can be internally linked from other
+  -- parts of the document.
+  contents <- (if T.null ident
+       then id
+       else ("<<" <> literal ident <> ">>" $$)) <$> blockListToOrg body
+  return (blankline $$ contents $$ blankline)
 
 -- | Convert bullet list item (list of blocks) to Org.
 bulletListItemToOrg :: PandocMonad m => [Block] -> Org m (Doc Text)

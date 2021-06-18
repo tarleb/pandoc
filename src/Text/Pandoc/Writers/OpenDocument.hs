@@ -399,6 +399,7 @@ blockToOpenDocument o = \case
                         then return $ text $ T.unpack s
                         else empty <$ report (BlockNotRendered b)
     Null             -> return empty
+    Figure attrs _ body -> mkDiv attrs body
     where
       defList       b = do setInDefinitionList True
                            r <- vcat  <$> mapM (deflistItemToOpenDocument o) b

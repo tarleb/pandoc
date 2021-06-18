@@ -387,6 +387,8 @@ blockToICML opts style (Div (_ident, _, kvs) lst) =
   let dynamicStyle = maybeToList $ lookup dynamicStyleKey kvs
   in  blocksToICML opts (dynamicStyle <> style) lst
 blockToICML _ _ Null = return empty
+blockToICML opts style (Figure attr _ body) =
+  blockToICML opts style $ Div attr body
 
 -- | Convert a list of lists of blocks to ICML list items.
 listItemsToICML :: PandocMonad m => WriterOptions -> Text -> Style -> Maybe ListAttributes -> [[Block]] -> WS m (Doc Text)

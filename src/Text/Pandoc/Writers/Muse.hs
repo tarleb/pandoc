@@ -280,6 +280,7 @@ blockToMuse (Table _ blkCapt specs thead tbody tfoot) =
     isSimple = onlySimpleTableCells (headers : rows) && all (== 0) widths
 blockToMuse (Div _ bs) = flatBlockListToMuse bs
 blockToMuse Null = return empty
+blockToMuse (Figure attr _ bs) = blockToMuse (Div attr bs)
 
 -- | Return Muse representation of notes collected so far.
 currentNotesToMuse :: PandocMonad m

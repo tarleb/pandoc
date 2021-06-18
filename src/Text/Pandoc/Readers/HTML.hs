@@ -25,7 +25,7 @@ module Text.Pandoc.Readers.HTML ( readHtml
                                 ) where
 
 import Control.Applicative ((<|>))
-import Control.Monad (guard, msum, mzero, unless, void)
+import Control.Monad (guard, mzero, unless, void)
 import Control.Monad.Except (throwError, catchError)
 import Control.Monad.Reader (ask, asks, lift, local, runReaderT)
 import Data.Text.Encoding.Base64 (encodeBase64)
@@ -36,6 +36,7 @@ import Data.List.Split (splitWhen)
 import Data.List (foldl')
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe, isJust, isNothing)
+import Data.Either (partitionEithers)
 import Data.Monoid (First (..))
 import qualified Data.Set as Set
 import Data.Text (Text)
@@ -582,23 +583,15 @@ pPara = do
 
 pFigure :: PandocMonad m => TagParser m Blocks
 pFigure = try $ do
-  TagOpen _ _ <- pSatisfy (matchTagOpen "figure" [])
-  skipMany pBlank
-  let pImg  = (\x -> (Just x, Nothing)) <$>
-               (pInTag TagsOmittable "p" pImage <* skipMany pBlank)
-      pCapt = (\x -> (Nothing, Just x)) <$> do
-                bs <- pInTags "figcaption" block
-                return $ blocksToInlines' $ B.toList bs
-      pSkip = (Nothing, Nothing) <$ pSatisfy (not . matchTagClose "figure")
-  res <- many (pImg <|> pCapt <|> pSkip)
-  let mbimg = msum $ map fst res
-  let mbcap = msum $ map snd res
-  TagClose _ <- pSatisfy (matchTagClose "figure")
-  let caption = fromMaybe mempty mbcap
-  case B.toList <$> mbimg of
-       Just [Image attr _ (url, tit)] ->
-         return $ B.simpleFigureWith attr caption url tit
-       _ -> mzero
+  TagOpen tag attrList <- lookAhead $ pSatisfy (matchTagOpen "figure" [])
+  contents <- pInTags tag (many $ Left <$> pInTags "figcaption" block <|>
+                                  (Right <$> block))
+
+  let (captions, rest) = partitionEithers contents
+  -- Concatenate all captions together
+  return $ B.figureWith (toAttr attrList)
+                        (B.simpleCaption (mconcat captions))
+                        (mconcat rest)
 
 pCodeBlock :: PandocMonad m => TagParser m Blocks
 pCodeBlock = try $ do

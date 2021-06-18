@@ -171,7 +171,6 @@ blockToMan opts (Table _ blkCapt specs thead tbody tfoot) =
   return $ literal ".PP" $$ caption' $$
            literal ".TS" $$ literal "tab(@);" $$ coldescriptions $$
            colheadings' $$ vcat body $$ literal ".TE"
-
 blockToMan opts (BulletList items) = do
   contents <- mapM (bulletListItemToMan opts) items
   return (vcat contents)
@@ -184,6 +183,7 @@ blockToMan opts (OrderedList attribs items) = do
 blockToMan opts (DefinitionList items) = do
   contents <- mapM (definitionListItemToMan opts) items
   return (vcat contents)
+blockToMan opts (Figure attrs _ body) = blockToMan opts $ Div attrs body
 
 -- | Convert bullet list item (list of blocks) to man.
 bulletListItemToMan :: PandocMonad m => WriterOptions -> [Block] -> StateT WriterState m (Doc Text)

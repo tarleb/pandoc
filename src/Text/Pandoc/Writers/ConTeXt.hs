@@ -267,6 +267,7 @@ blockToConTeXt (Header level attr lst) =
   sectionHeader attr level lst NonSectionHeading
 blockToConTeXt (Table attr caption colspecs thead tbody tfoot) =
   tableToConTeXt (Ann.toTable attr caption colspecs thead tbody tfoot)
+blockToConTeXt (Figure attr _ body) = blockToConTeXt $ Div attr body
 
 tableToConTeXt :: PandocMonad m => Ann.Table -> WM m (Doc Text)
 tableToConTeXt (Ann.Table attr caption colspecs thead tbodies tfoot) = do
