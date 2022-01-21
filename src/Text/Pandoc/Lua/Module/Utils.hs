@@ -59,6 +59,8 @@ documentedModule = Module
       <#> opt (parameter (peekList peekInline) "list of inlines" "inline" "")
       =#> functionResult pushInlines "list of inlines" ""
 
+    , Lua.documentation
+
     , defun "equals"
       ### equal
       <#> parameter pure "AST element" "elem1" ""

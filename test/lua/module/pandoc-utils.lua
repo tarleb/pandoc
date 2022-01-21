@@ -39,6 +39,15 @@ return {
     end)
   },
 
+  group 'documentation' {
+    test('returns a string for a documented function', function ()
+      assert.is_truthy(utils.documentation(pandoc.Pandoc):match 'Pandoc')
+    end),
+    test('returns nil for an anonymous function', function ()
+      assert.are_equal(utils.documentation(function () end), nil)
+    end),
+  },
+
   group 'equals' {
     test('compares Pandoc elements', function ()
       assert.is_truthy(
