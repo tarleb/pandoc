@@ -104,7 +104,10 @@ getDefaultTemplate format = do
        "gfm"               -> getDefaultTemplate "commonmark"
        "commonmark_x"      -> getDefaultTemplate "commonmark"
        _        -> do
-         let fname = "templates" </> "default" <.> T.unpack format
+         let suffix = case splitExtensions (T.unpack format) of
+                        (fmt, "") -> fmt
+                        _         -> T.unpack format <.> "custom"
+         let fname = "templates" </> "default" <.> suffix
          UTF8.toText <$> readDataFile fname
 
 -- | Get and compile default template for the specified writer.
