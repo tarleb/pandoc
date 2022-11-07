@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards     #-}
 {- |
@@ -233,18 +234,6 @@ blockToDocBook _ h@Header{} = do
   report $ BlockNotRendered h
   return empty
 blockToDocBook opts (Plain lst) = inlinesToDocBook opts lst
--- title beginning with fig: indicates that the image is a figure
-blockToDocBook opts (SimpleFigure attr txt (src, _)) = do
-  alt <- inlinesToDocBook opts txt
-  let capt = if null txt
-                then empty
-                else inTagsSimple "title" alt
-  return $ inTagsIndented "figure" $
-        capt $$
-        inTagsIndented "mediaobject" (
-           inTagsIndented "imageobject"
-             (imageToDocBook opts attr src) $$
-           inTagsSimple "textobject" (inTagsSimple "phrase" alt))
 blockToDocBook opts (Para lst)
   | hasLineBreaks lst = flush . nowrap . inTagsSimple "literallayout"
                         <$> inlinesToDocBook opts lst
@@ -323,7 +312,34 @@ blockToDocBook opts (Table _ blkCapt specs thead tbody tfoot) = do
   return $ inTagsIndented tableType $ captionDoc $$
         inTags True "tgroup" [("cols", tshow (length aligns))] (
          coltags $$ head' $$ body')
-blockToDocBook opts (Figure attr _ body) = blockToDocBook opts $ Div attr body
+blockToDocBook opts (Figure attr (Caption _ caption) body) = do
+  -- TODO: probably better to handle nested figures as mediaobject
+  let isAcceptable = \case
+        Table {}  -> Any False
+        Figure {} -> Any False
+        _         -> Any True
+  if getAny $ query isAcceptable body
+    then do
+      capt <- inlinesToDocBook opts (blocksToInlines caption)
+      let toMediaobject = \case
+            Plain [Image imgAttr inlns (src, _)] -> do
+              alt <- inlinesToDocBook opts inlns
+              pure $ inTagsIndented "mediaobject" (
+                inTagsIndented "imageobject"
+                (imageToDocBook opts imgAttr src) $$
+                inTagsSimple "textobject" (inTagsSimple "phrase" alt))
+            _ -> ask >>= \case
+                   DocBook4 -> pure mempty -- docbook4 requires media
+                   DocBook5 -> blocksToDocBook opts body
+      mediaobjects <- mapM toMediaobject body
+      return $
+        if isEmpty $ mconcat mediaobjects
+        then mempty -- figures must have content
+        else inTagsIndented "figure" $
+             inTagsIndented "title" capt $$
+             mconcat mediaobjects
+    -- Fallback to a div if the content cannot be included in a figure
+    else blockToDocBook opts $ Div attr body
 
 hasLineBreaks :: [Inline] -> Bool
 hasLineBreaks = getAny . query isLineBreak . walk removeNote
