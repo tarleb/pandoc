@@ -6,9 +6,7 @@ Figure float with caption at the figure level.
 
 ^D
 <figure id="fig-id">
-<figure>
-<img src="foo.png" />
-</figure>
+<p><img src="foo.png" title="fig:" /></p>
 <figcaption><p>Caption</p></figcaption>
 </figure>
 ```

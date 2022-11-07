@@ -64,8 +64,8 @@ import Text.Pandoc.Options (
     extensionEnabled)
 import Text.Pandoc.Parsing hiding ((<|>))
 import Text.Pandoc.Shared (
-    addMetaField, blocksToInlines', extractSpaces,
-    htmlSpanLikeElements, renderTags', safeRead, tshow, formatCode)
+    addMetaField, extractSpaces, htmlSpanLikeElements, renderTags',
+    safeRead, tshow, formatCode)
 import Text.Pandoc.URI (escapeURI)
 import Text.Pandoc.Walk
 import Text.TeXMath (readMathML, writeTeX)
@@ -582,12 +582,11 @@ pPara = do
     <|> return (B.para contents)
 
 pFigure :: PandocMonad m => TagParser m Blocks
-pFigure = try $ do
-  TagOpen tag attrList <- lookAhead $ pSatisfy (matchTagOpen "figure" [])
-  contents <- pInTags tag (many $ Left <$> pInTags "figcaption" block <|>
-                                  (Right <$> block))
-
-  let (captions, rest) = partitionEithers contents
+pFigure = do
+  TagOpen tag attrList <- pSatisfy $ matchTagOpen "figure" []
+  let parser = Left <$> pInTags "figcaption" block <|>
+             (Right <$> block)
+  (captions, rest) <- partitionEithers <$> manyTill parser (pCloses tag <|> eof)
   -- Concatenate all captions together
   return $ B.figureWith (toAttr attrList)
                         (B.simpleCaption (mconcat captions))
