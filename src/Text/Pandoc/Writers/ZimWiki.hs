@@ -86,16 +86,6 @@ blockToZimWiki opts (Div _attrs bs) = do
 
 blockToZimWiki opts (Plain inlines) = inlineListToZimWiki opts inlines
 
--- ZimWiki doesn't support captions - so combine together alt and caption into alt
-blockToZimWiki opts (SimpleFigure attr txt (src, tit)) = do
-  capt <- if null txt
-             then return ""
-             else (" " <>) `fmap` inlineListToZimWiki opts txt
-  let opt = if null txt
-               then ""
-               else "|" <> if T.null tit then capt else tit <> capt
-  return $ "{{" <> src <> imageDims opts attr <> opt <> "}}\n"
-
 blockToZimWiki opts (Para inlines) = do
   indent <- gets stIndent
   -- useTags <- gets stUseTags
