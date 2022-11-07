@@ -109,17 +109,6 @@ blockToDokuWiki opts (Div _attrs bs) = do
 blockToDokuWiki opts (Plain inlines) =
   inlineListToDokuWiki opts inlines
 
--- title beginning with fig: indicates that the image is a figure
--- dokuwiki doesn't support captions - so combine together alt and caption into alt
-blockToDokuWiki opts (SimpleFigure attr txt (src, tit)) = do
-      capt <- if null txt
-              then return ""
-              else (" " <>) `fmap` inlineListToDokuWiki opts txt
-      let opt = if null txt
-                then ""
-                else "|" <> if T.null tit then capt else tit <> capt
-      return $ "{{" <> src <> imageDims opts attr <> opt <> "}}\n"
-
 blockToDokuWiki opts (Para inlines) = do
   indent <- asks stIndent
   useTags <- asks stUseTags
