@@ -1345,12 +1345,13 @@ or here: &lt;http://example.com/&gt;
       From <quote>Voyage dans la Lune</quote> by Georges Melies (1902):
     </para>
     <figure>
-      <title>lalune</title>
+      <title>
+        lalune
+      </title>
       <mediaobject>
         <imageobject>
           <imagedata fileref="lalune.jpg" />
         </imageobject>
-        <textobject><phrase>lalune</phrase></textobject>
       </mediaobject>
     </figure>
     <para>
