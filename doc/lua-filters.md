@@ -4529,11 +4529,12 @@ Value used to represent the `null` JSON value. (userdata)
 
 `decode (str[, pandoc_types])`
 
-Creates a Lua object from a JSON string. The function returns an
-[Inline], [Block], [Pandoc], [Inlines], or [Blocks] element if the
-input can be decoded into represent any of those types. Otherwise
-the default decoding is applied, using tables, booleans, numbers,
-and [null](#pandoc.json.null) to represent the JSON value.
+If the input can be decoded as representing an [Inline], [Block],
+[Pandoc], [Inlines], or [Blocks] element, the function will return
+an object of the appropriate type. When the input cannot be
+decoded as representing one of those elements, default decoding
+using tables, booleans, numbers, and [null](#pandoc.json.null) to
+represent the JSON value is applied.
 
 The special handling of AST elements can be disabled by setting
 `pandoc_types` to `false`.
@@ -4557,9 +4558,9 @@ Returns:
 Encodes a Lua object as JSON string.
 
 If the object has a metamethod with name `__tojson`, then the
-result is that of a call to that method with `object` passed as
-the sole argument. The result of that call is expected to be a
-valid JSON string, but this not checked.
+result is a call to that method with `object` passed as the sole
+argument. The result of that call is expected to be a valid JSON
+string, but this is not checked.
 
 Parameters:
 
