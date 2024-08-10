@@ -158,7 +158,10 @@ table = try $ do
   where
     -- The headers are as many empty strings as the number of columns
     -- in the first row
-    headers rows = replicate (length $ head rows) ((B.plain . B.str) "")
+    headers rows = let lengthFstRow = case rows of
+                                        r:_ -> length r
+                                        []  -> 0
+                   in replicate lengthFstRow ((B.plain . B.str) "")
 
 para :: PandocMonad m => TikiWikiParser m B.Blocks
 para =  fmap (result . mconcat) ( many1Till inline endOfParaElement)
@@ -226,24 +229,24 @@ fixListNesting [first] = [recurseOnList first]
 -- fixListNesting nestall | trace ("\n\nfixListNesting: " ++ (show nestall)) False = undefined
 -- fixListNesting nestall@(first:second:rest) =
 fixListNesting (first:second:rest) =
-  let secondBlock = head $ B.toList second in
-    case secondBlock of
-      BulletList _ -> fixListNesting $ mappend (recurseOnList first) (recurseOnList second) : rest
-      OrderedList _ _ -> fixListNesting $ mappend (recurseOnList first) (recurseOnList second) : rest
-      _ -> recurseOnList first : fixListNesting (second:rest)
+  let firstBlockIsList blks = case B.toList blks of
+        (BulletList {}):_rest  -> True
+        (OrderedList {}):_rest -> True
+        _other                 -> False
+  in if firstBlockIsList second
+     then fixListNesting $
+          mappend (recurseOnList first) (recurseOnList second) : rest
+     else recurseOnList first : fixListNesting (second:rest)
 
 -- This function walks the Block structure for fixListNesting,
 -- because it's a bit complicated, what with converting to and from
 -- lists and so on.
 recurseOnList :: B.Blocks -> B.Blocks
--- recurseOnList item | trace ("rOL: " ++ (show $ length $ B.toList item) ++ ", " ++ (show $ B.toList item)) False = undefined
-recurseOnList items
-  | length (B.toList items) == 1 =
-    let itemBlock = head $ B.toList items in
-      case itemBlock of
-        BulletList listItems -> B.bulletList $ fixListNesting $ map B.fromList listItems
-        OrderedList _ listItems -> B.orderedList $ fixListNesting $ map B.fromList listItems
-        _ -> items
+recurseOnList items = case B.toList items of
+  [BulletList listItems] ->
+    B.bulletList $ fixListNesting $ map B.fromList listItems
+  [OrderedList _ listItems] ->
+    B.orderedList $ fixListNesting $ map B.fromList listItems
 
   -- The otherwise works because we constructed the blocks, and we
   -- know for a fact that no mappends have been run on them; each
@@ -251,7 +254,7 @@ recurseOnList items
   --
   -- Anything that's not like that has already been processed by
   -- fixListNesting; don't bother to process it again.
-  | otherwise = items
+  _notAListSingleton -> items
 
 
 -- Turn the list if list items into a tree by breaking off the first

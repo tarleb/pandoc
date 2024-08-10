@@ -430,14 +430,14 @@ listItemToICML opts style isFirst attribs item =
                then firstListItemName:style
                else style
       stl' = makeNumbStart attribs ++ stl
-  in  if length item > 1
-         then do
-           let insertTab (Para lst) = blockToICML opts (subListParName:style) $ Para $ Str "\t":lst
-               insertTab block      = blockToICML opts style block
-           f <- blockToICML opts stl' $ head item
-           r <- mapM insertTab $ tail item
-           return $ intersperseBrs (f : r)
-         else blocksToICML opts stl' item
+  in case item of
+       x:x':xs -> do
+         let insertTab (Para lst) = blockToICML opts (subListParName:style) $ Para $ Str "\t":lst
+             insertTab block      = blockToICML opts style block
+         f <- blockToICML opts stl' x
+         r <- mapM insertTab (x':xs)
+         return $ intersperseBrs (f : r)
+       _x -> blocksToICML opts stl' item
 
 definitionListItemToICML :: PandocMonad m => WriterOptions -> Style -> ([Inline],[[Block]]) -> WS m (Doc Text)
 definitionListItemToICML opts style (term,defs) = do

@@ -1248,7 +1248,7 @@ simpleTableHeader headless = try $ do
   let (lengths, lines') = unzip dashes
   let indices  = scanl (+) (T.length initSp) lines'
   -- If no header, calculate alignment on basis of first row of text
-  rawHeads <- fmap (tail . splitTextByIndices (init indices)) $
+  rawHeads <- fmap (drop 1 . splitTextByIndices (init indices)) $
               if headless
                  then lookAhead anyLine
                  else return rawContent
@@ -1295,7 +1295,7 @@ rawTableLine :: PandocMonad m
 rawTableLine indices = do
   notFollowedBy' (blanklines' <|> tableFooter)
   line <- anyLine
-  return $ map trim $ tail $
+  return $ map trim $ drop 1 $
            splitTextByIndices (init indices) line
 
 -- Parse a table line and return a list of lists of blocks (columns).
