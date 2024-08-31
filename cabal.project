@@ -7,3 +7,9 @@ flags: +embed_data_files
 constraints: skylighting-format-blaze-html >= 0.1.1.2,
              skylighting-format-context >= 0.1.0.2
 
+
+source-repository-package
+  type: git
+  location: https://github.com/hslua/hslua
+  subdir: lua
+  tag: 0489b336bfe8d6504d205b82a78ad2b4d6d40a85
