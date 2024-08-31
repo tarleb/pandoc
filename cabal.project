@@ -11,3 +11,9 @@ constraints: skylighting-format-blaze-html >= 0.1.1.2,
 --   type: git
 --   location: https://github.com/jgm/texmath
 --   tag: 64e1cbf1fdbe19382804be487cc49bdcea2ac799
+
+source-repository-package
+  type: git
+  location: https://github.com/hslua/hslua
+  subdir: lua
+  tag: 4e459aeced5a39643d5474c6a7511ae2d0fa3f5e
