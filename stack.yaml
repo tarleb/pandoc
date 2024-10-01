@@ -20,7 +20,7 @@ extra-deps:
 - doctemplates-0.11.0.1
 - typst-0.6
 - hslua-module-doclayout-1.2.0
-- pandoc-lua-marshal-0.2.8
+- pandoc-lua-marshal-0.2.9
 - git: https://github.com/jgm/commonmark-hs
   subdirs: [commonmark, commonmark-pandoc]
   commit: 7130ce27089b47588f64946263defc05fd72ab29
