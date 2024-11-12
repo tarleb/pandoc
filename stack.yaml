@@ -17,6 +17,29 @@ extra-deps:
 - texmath-0.12.10.2
 - citeproc-0.9.0.1
 - typst-0.8
+- git: https://github.com/pandoc/pandoc-lua-marshal.git
+  commit: 8aad192811f192596d804f0faaf3c9300549f623
+- git: https://github.com/hslua/hslua-module-doclayout.git
+  commit: c15e4a99089805eea92d16093f571838c9385433
+- git: https://github.com/hslua/hslua.git
+  commit: addc834cf4ad4814ccc32b7e9a03f3c7cfef90c4
+  subdirs:
+    - hslua
+    - hslua-aeson
+    - hslua-classes
+    - hslua-core
+    - hslua-list
+    - hslua-marshalling
+    - hslua-module-path
+    - hslua-module-text
+    - hslua-module-system
+    - hslua-module-version
+    - hslua-module-zip
+    - hslua-objectorientation
+    - hslua-packaging
+    - lua
+    - lua-arbitrary
+    - tasty-lua
 ghc-options:
    "$locals": -fhide-source-paths -Wno-missing-home-modules
 resolver: lts-23.22
