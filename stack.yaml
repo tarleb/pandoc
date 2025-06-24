@@ -8,6 +8,9 @@ packages:
 - 'pandoc-cli'
 - 'pandoc-lua-engine'
 - 'pandoc-server'
+allow-newer-deps:
+  # Temporary, while upgrading to hslua-2.4
+  - pandoc-lua-engine
 extra-deps:
 - hslua-2.4.0
 - hslua-module-doclayout-1.2.0.1
